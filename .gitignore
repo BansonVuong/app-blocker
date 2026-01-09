@@ -1,0 +1,29 @@
+.gradle/
+.idea/
+*.iml
+local.properties
+.DS_Store
+
+# Build outputs
+build/
+app/build/
+
+# Logs
+*.log
+
+# Android Studio captures
+captures/
+
+# External native build
+.cxx/
+.externalNativeBuild/
+
+# Kotlin
+*.kotlin_module
+
+# Keystore files
+*.jks
+*.keystore
+
+# Bundles
+*.aab

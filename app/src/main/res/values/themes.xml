@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.AppBlocker" parent="Theme.Material3.Light.NoActionBar">
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorPrimaryDark">@color/primary_dark</item>
+        <item name="colorAccent">@color/accent</item>
+    </style>
+
+    <style name="Theme.AppBlocker.Blocked" parent="Theme.Material3.Light.NoActionBar">
+        <item name="android:windowBackground">@color/blocked_background</item>
+        <item name="android:statusBarColor">@color/blocked_background</item>
+        <item name="android:navigationBarColor">@color/blocked_background</item>
+    </style>
+</resources>
