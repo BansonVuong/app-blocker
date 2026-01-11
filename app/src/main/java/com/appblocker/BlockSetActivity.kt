@@ -128,12 +128,17 @@ class BlockSetActivity : AppCompatActivity() {
         val blockSets = storage.getBlockSets()
 
         if (blockSet != null) {
-            // Update existing
-            blockSet!!.name = name
-            blockSet!!.quotaMinutes = quota
-            blockSet!!.windowMinutes = window
-            blockSet!!.combinedQuota = combinedQuota
-            blockSet!!.apps = selectedApps
+            // Update existing - find it in the fresh list by ID
+            val index = blockSets.indexOfFirst { it.id == blockSet!!.id }
+            if (index >= 0) {
+                blockSets[index] = blockSet!!.copy(
+                    name = name,
+                    quotaMinutes = quota,
+                    windowMinutes = window,
+                    combinedQuota = combinedQuota,
+                    apps = selectedApps
+                )
+            }
         } else {
             // Create new
             val newBlockSet = BlockSet(
