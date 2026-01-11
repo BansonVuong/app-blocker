@@ -1,5 +1,7 @@
 package com.appblocker
 
+import android.app.usage.UsageEvents
+import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.SharedPreferences
 import com.google.gson.Gson
@@ -8,10 +10,10 @@ import com.google.gson.reflect.TypeToken
 class Storage(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("app_blocker", Context.MODE_PRIVATE)
     private val gson = Gson()
+    private val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
 
     companion object {
         private const val KEY_BLOCK_SETS = "block_sets"
-        private const val KEY_USAGE_TIMESTAMPS_PREFIX = "usage_ts_"
     }
 
     fun saveBlockSets(blockSets: List<BlockSet>) {
@@ -29,49 +31,54 @@ class Storage(context: Context) {
         return getBlockSets().find { it.apps.contains(packageName) }
     }
 
-    // Usage tracking - stores list of timestamps (in seconds) when usage occurred
-    private fun getUsageTimestampsKey(blockSetId: String): String {
-        return "${KEY_USAGE_TIMESTAMPS_PREFIX}$blockSetId"
-    }
+    // Get usage time from system UsageStats events for apps in a block set
+    fun getUsageSecondsInWindow(blockSet: BlockSet): Int {
+        val now = System.currentTimeMillis()
+        val windowMs = blockSet.windowMinutes * 60 * 1000L
+        val windowStart = (now / windowMs) * windowMs // Align to window boundary
 
-    private fun getUsageTimestamps(blockSetId: String): MutableList<Long> {
-        val json = prefs.getString(getUsageTimestampsKey(blockSetId), null) ?: return mutableListOf()
-        val type = object : TypeToken<MutableList<Long>>() {}.type
-        return gson.fromJson(json, type) ?: mutableListOf()
-    }
+        val events = usageStatsManager.queryEvents(windowStart, now)
+        val event = UsageEvents.Event()
 
-    private fun saveUsageTimestamps(blockSetId: String, timestamps: List<Long>) {
-        val json = gson.toJson(timestamps)
-        prefs.edit().putString(getUsageTimestampsKey(blockSetId), json).apply()
-    }
+        // Track foreground start times for each app
+        val foregroundStartTimes = mutableMapOf<String, Long>()
+        var totalMs = 0L
 
-    fun addUsageSeconds(blockSetId: String, seconds: Int) {
-        val now = System.currentTimeMillis() / 1000
-        val timestamps = getUsageTimestamps(blockSetId)
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            val packageName = event.packageName
 
-        // Add a timestamp for each second of usage
-        repeat(seconds) {
-            timestamps.add(now)
+            // Only process apps in this block set
+            if (!blockSet.apps.contains(packageName)) continue
+
+            when (event.eventType) {
+                UsageEvents.Event.MOVE_TO_FOREGROUND,
+                UsageEvents.Event.ACTIVITY_RESUMED -> {
+                    // App came to foreground
+                    foregroundStartTimes[packageName] = event.timeStamp
+                }
+                UsageEvents.Event.MOVE_TO_BACKGROUND,
+                UsageEvents.Event.ACTIVITY_PAUSED -> {
+                    // App went to background - calculate time spent
+                    val startTime = foregroundStartTimes[packageName]
+                    if (startTime != null) {
+                        totalMs += event.timeStamp - startTime
+                        foregroundStartTimes.remove(packageName)
+                    }
+                }
+            }
         }
 
-        // Clean up old timestamps (older than 1 hour to save space)
-        val cutoff = now - 3600
-        val cleaned = timestamps.filter { it >= cutoff }
+        // If any app is still in foreground, count time up to now
+        for ((_, startTime) in foregroundStartTimes) {
+            totalMs += now - startTime
+        }
 
-        saveUsageTimestamps(blockSetId, cleaned)
+        return (totalMs / 1000).toInt()
     }
 
-    fun getUsageMinutesInWindow(blockSetId: String, windowMinutes: Int): Int {
-        return getUsageSecondsInWindow(blockSetId, windowMinutes) / 60
-    }
-
-    fun getUsageSecondsInWindow(blockSetId: String, windowMinutes: Int): Int {
-        val now = System.currentTimeMillis() / 1000
-        val windowSeconds = windowMinutes * 60
-        val windowStart = (now / windowSeconds) * windowSeconds
-        val timestamps = getUsageTimestamps(blockSetId)
-
-        return timestamps.count { it >= windowStart }
+    fun getUsageMinutesInWindow(blockSet: BlockSet): Int {
+        return getUsageSecondsInWindow(blockSet) / 60
     }
 
     fun getRemainingMinutes(blockSet: BlockSet): Int {
@@ -79,16 +86,12 @@ class Storage(context: Context) {
     }
 
     fun getRemainingSeconds(blockSet: BlockSet): Int {
-        val usedSeconds = getUsageSecondsInWindow(blockSet.id, blockSet.windowMinutes)
+        val usedSeconds = getUsageSecondsInWindow(blockSet)
         val quotaSeconds = blockSet.quotaMinutes * 60
         return maxOf(0, quotaSeconds - usedSeconds)
     }
 
     fun isQuotaExceeded(blockSet: BlockSet): Boolean {
-        return getRemainingMinutes(blockSet) <= 0
-    }
-
-    fun clearUsage(blockSetId: String) {
-        prefs.edit().remove(getUsageTimestampsKey(blockSetId)).apply()
+        return getRemainingSeconds(blockSet) <= 0
     }
 }

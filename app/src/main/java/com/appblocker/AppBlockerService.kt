@@ -1,6 +1,7 @@
 package com.appblocker
 
 import android.accessibilityservice.AccessibilityService
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
@@ -9,6 +10,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.widget.TextView
@@ -19,16 +21,17 @@ class AppBlockerService : AccessibilityService() {
     private lateinit var storage: Storage
     private val handler = Handler(Looper.getMainLooper())
     private var currentTrackedPackage: String? = null
-    private var currentBlockSetId: String? = null
-    private var trackingRunnable: Runnable? = null
+    private var currentBlockSet: BlockSet? = null
+    private var overlayUpdateRunnable: Runnable? = null
     private var pendingStopRunnable: Runnable? = null
     private var overlayView: TextView? = null
+    private var debugOverlayView: TextView? = null
     private var windowManager: WindowManager? = null
 
     companion object {
         var isRunning = false
             private set
-        private const val TRACKING_INTERVAL_MS = 1000L // Track every second
+        private const val OVERLAY_UPDATE_INTERVAL_MS = 1000L // Update overlay every second
         private const val OVERLAY_MARGIN_DP = 12
     }
 
@@ -56,6 +59,11 @@ class AppBlockerService : AccessibilityService() {
 
         val packageName = event.packageName?.toString() ?: return
 
+        // Update debug overlay with current package info
+        val blockSet = storage.getBlockSetForApp(packageName)
+        val isBlocked = blockSet != null
+        updateDebugOverlay(packageName, isBlocked, currentTrackedPackage)
+
         // Ignore our own app and system UI
         if (packageName == "com.android.systemui") {
             // Ignore transient system UI overlays (e.g., notification shade)
@@ -69,9 +77,7 @@ class AppBlockerService : AccessibilityService() {
             return
         }
 
-        // Check if this app is in any block set
-        val blockSet = storage.getBlockSetForApp(packageName)
-
+        // blockSet already looked up above for debug overlay
         if (blockSet != null) {
             cancelPendingStop()
             // Check if quota is exceeded
@@ -81,52 +87,52 @@ class AppBlockerService : AccessibilityService() {
                 return
             }
 
-            // Start or continue tracking
+            // Start or continue tracking for overlay updates
             if (currentTrackedPackage != packageName) {
                 stopTracking()
-                startTracking(packageName, blockSet.id)
+                startTracking(packageName, blockSet)
                 updateOverlay(blockSet)
             }
         } else {
-            // App not in any block set, stop tracking
+            // App not in any block set, schedule stop tracking
             scheduleStopTracking()
-            updateOverlay(null)
         }
     }
 
-    private fun startTracking(packageName: String, blockSetId: String) {
+    private fun startTracking(packageName: String, blockSet: BlockSet) {
         cancelPendingStop()
         currentTrackedPackage = packageName
-        currentBlockSetId = blockSetId
+        currentBlockSet = blockSet
 
-        trackingRunnable = object : Runnable {
+        // Just update overlay periodically - system tracks actual usage time
+        overlayUpdateRunnable = object : Runnable {
             override fun run() {
-                currentBlockSetId?.let { id ->
-                    storage.addUsageSeconds(id, 1)
-
-                    // Check if quota exceeded after adding usage
-                    val blockSet = storage.getBlockSets().find { it.id == id }
-                    if (blockSet != null && storage.isQuotaExceeded(blockSet)) {
-                        launchBlockedScreen(blockSet.name, blockSet.id)
-                        stopTracking()
-                        return
-                    }
-                    if (blockSet != null) {
-                        updateOverlay(blockSet)
+                currentBlockSet?.let { bs ->
+                    // Re-fetch blockSet to get current state
+                    val updatedBlockSet = storage.getBlockSets().find { it.id == bs.id }
+                    if (updatedBlockSet != null) {
+                        // Check if quota exceeded
+                        if (storage.isQuotaExceeded(updatedBlockSet)) {
+                            launchBlockedScreen(updatedBlockSet.name, updatedBlockSet.id)
+                            stopTracking()
+                            return
+                        }
+                        updateOverlay(updatedBlockSet)
                     }
                 }
-                handler.postDelayed(this, TRACKING_INTERVAL_MS)
+                handler.postDelayed(this, OVERLAY_UPDATE_INTERVAL_MS)
             }
         }
-        handler.postDelayed(trackingRunnable!!, TRACKING_INTERVAL_MS)
+        handler.postDelayed(overlayUpdateRunnable!!, OVERLAY_UPDATE_INTERVAL_MS)
     }
 
     private fun stopTracking() {
         cancelPendingStop()
-        trackingRunnable?.let { handler.removeCallbacks(it) }
-        trackingRunnable = null
+        overlayUpdateRunnable?.let { handler.removeCallbacks(it) }
+        overlayUpdateRunnable = null
         currentTrackedPackage = null
-        currentBlockSetId = null
+        currentBlockSet = null
+        updateOverlay(null)
     }
 
     private fun scheduleStopTracking() {
@@ -207,9 +213,80 @@ class AppBlockerService : AccessibilityService() {
     }
 
     private fun removeOverlay() {
-        val view = overlayView ?: return
-        windowManager?.removeView(view)
+        overlayView?.let { windowManager?.removeView(it) }
         overlayView = null
+        debugOverlayView?.let { windowManager?.removeView(it) }
+        debugOverlayView = null
+    }
+
+    private fun updateDebugOverlay(packageName: String, isBlocked: Boolean, tracking: String?) {
+        if (!Settings.canDrawOverlays(this)) return
+
+        val shortName = packageName.substringAfterLast(".")
+        val status = if (isBlocked) "BLOCKED" else "not blocked"
+        val trackingInfo = tracking?.substringAfterLast(".") ?: "none"
+        val text = "$shortName ($status)\ntracking: $trackingInfo"
+
+        val view = ensureDebugOverlayView()
+        view.text = text
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun ensureDebugOverlayView(): TextView {
+        if (debugOverlayView != null) return debugOverlayView!!
+
+        val view = TextView(this)
+        view.setTextColor(Color.YELLOW)
+        view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 11f)
+        view.setPadding(dpToPx(8), dpToPx(4), dpToPx(8), dpToPx(4))
+        view.background = GradientDrawable().apply {
+            cornerRadius = dpToPx(8).toFloat()
+            setColor(Color.argb(200, 50, 50, 50))
+        }
+
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O)
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else
+                WindowManager.LayoutParams.TYPE_PHONE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            android.graphics.PixelFormat.TRANSLUCENT
+        )
+        params.gravity = Gravity.TOP or Gravity.START
+        params.x = dpToPx(OVERLAY_MARGIN_DP)
+        params.y = dpToPx(OVERLAY_MARGIN_DP + 40)
+
+        // Make the overlay draggable
+        var initialX = 0
+        var initialY = 0
+        var initialTouchX = 0f
+        var initialTouchY = 0f
+
+        view.setOnTouchListener { _, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    initialX = params.x
+                    initialY = params.y
+                    initialTouchX = event.rawX
+                    initialTouchY = event.rawY
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    params.x = initialX + (event.rawX - initialTouchX).toInt()
+                    params.y = initialY + (event.rawY - initialTouchY).toInt()
+                    windowManager?.updateViewLayout(view, params)
+                    true
+                }
+                else -> false
+            }
+        }
+
+        windowManager?.addView(view, params)
+        debugOverlayView = view
+        return view
     }
 
     private fun formatRemainingTime(remainingSeconds: Int): String {
