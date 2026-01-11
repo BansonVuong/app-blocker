@@ -94,8 +94,20 @@ class AppBlockerService : AccessibilityService() {
                 updateOverlay(blockSet)
             }
         } else {
-            // App not in any block set, schedule stop tracking
-            scheduleStopTracking()
+            // App not in any block set
+            // Only stop tracking if this looks like a real app switch (not a system overlay/dialog)
+            // System overlays, keyboards, etc. often have short package names or system prefixes
+            val isLikelyOverlay = packageName.startsWith("com.android.") ||
+                packageName.startsWith("com.google.android.inputmethod") ||
+                packageName.startsWith("com.samsung.") ||
+                packageName.contains("keyboard") ||
+                packageName.contains("overlay")
+            
+            if (!isLikelyOverlay) {
+                // This is a real app that's not blocked - stop tracking
+                scheduleStopTracking()
+            }
+            // If it's likely an overlay, just ignore it and keep tracking
         }
     }
 
@@ -104,7 +116,10 @@ class AppBlockerService : AccessibilityService() {
         currentTrackedPackage = packageName
         currentBlockSet = blockSet
 
-        // Just update overlay periodically - system tracks actual usage time
+        // Update overlay immediately
+        updateOverlay(blockSet)
+
+        // Then update overlay periodically - system tracks actual usage time
         overlayUpdateRunnable = object : Runnable {
             override fun run() {
                 currentBlockSet?.let { bs ->
