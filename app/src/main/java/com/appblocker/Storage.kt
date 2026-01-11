@@ -14,6 +14,15 @@ class Storage(context: Context) {
 
     companion object {
         private const val KEY_BLOCK_SETS = "block_sets"
+        private const val KEY_DEBUG_OVERLAY_ENABLED = "debug_overlay_enabled"
+    }
+
+    fun isDebugOverlayEnabled(): Boolean {
+        return prefs.getBoolean(KEY_DEBUG_OVERLAY_ENABLED, false)
+    }
+
+    fun setDebugOverlayEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_DEBUG_OVERLAY_ENABLED, enabled).apply()
     }
 
     fun saveBlockSets(blockSets: List<BlockSet>) {

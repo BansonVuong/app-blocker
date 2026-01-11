@@ -56,6 +56,11 @@ class MainActivity : AppCompatActivity() {
             openBlockSetEditor(null)
         }
 
+        binding.switchDebugOverlay.isChecked = storage.isDebugOverlayEnabled()
+        binding.switchDebugOverlay.setOnCheckedChangeListener { _, isChecked ->
+            storage.setDebugOverlayEnabled(isChecked)
+        }
+
         binding.buttonEnableAccessibility.setOnClickListener {
             val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
             startActivity(intent)

@@ -11,6 +11,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.MotionEvent
+import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.widget.TextView
@@ -59,10 +60,14 @@ class AppBlockerService : AccessibilityService() {
 
         val packageName = event.packageName?.toString() ?: return
 
-        // Update debug overlay with current package info
+        // Update debug overlay with current package info (only if debug mode enabled)
         val blockSet = storage.getBlockSetForApp(packageName)
         val isBlocked = blockSet != null
-        updateDebugOverlay(packageName, isBlocked, currentTrackedPackage)
+        if (storage.isDebugOverlayEnabled()) {
+            updateDebugOverlay(packageName, isBlocked, currentTrackedPackage)
+        } else {
+            debugOverlayView?.visibility = View.GONE
+        }
 
         // Ignore our own app and system UI
         if (packageName == "com.android.systemui") {
@@ -182,6 +187,12 @@ class AppBlockerService : AccessibilityService() {
             return
         }
 
+        // If debug mode is off and no blocked app, hide the overlay
+        if (blockSet == null && !storage.isDebugOverlayEnabled()) {
+            overlayView?.visibility = View.GONE
+            return
+        }
+
         val text = if (blockSet == null) {
             "No blocked app"
         } else {
@@ -189,6 +200,7 @@ class AppBlockerService : AccessibilityService() {
             formatRemainingTime(remainingSeconds)
         }
         val view = ensureOverlayView()
+        view.visibility = View.VISIBLE
         view.text = text
         view.setTextColor(ContextCompat.getColor(this, R.color.white))
     }
@@ -243,6 +255,7 @@ class AppBlockerService : AccessibilityService() {
         val text = "$shortName ($status)\ntracking: $trackingInfo"
 
         val view = ensureDebugOverlayView()
+        view.visibility = View.VISIBLE
         view.text = text
     }
 
