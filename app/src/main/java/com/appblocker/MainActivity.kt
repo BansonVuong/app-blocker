@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.Process
 import android.provider.Settings
 import android.text.TextUtils
@@ -19,6 +21,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var storage: Storage
     private lateinit var adapter: BlockSetAdapter
+    private val handler = Handler(Looper.getMainLooper())
+    private var refreshRunnable: Runnable? = null
 
     private val blockSetLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -41,6 +45,27 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         checkPermissions()
         refreshData()
+        startPeriodicRefresh()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        stopPeriodicRefresh()
+    }
+
+    private fun startPeriodicRefresh() {
+        refreshRunnable = object : Runnable {
+            override fun run() {
+                refreshData()
+                handler.postDelayed(this, 1000L)
+            }
+        }
+        handler.postDelayed(refreshRunnable!!, 1000L)
+    }
+
+    private fun stopPeriodicRefresh() {
+        refreshRunnable?.let { handler.removeCallbacks(it) }
+        refreshRunnable = null
     }
 
     private fun setupRecyclerView() {

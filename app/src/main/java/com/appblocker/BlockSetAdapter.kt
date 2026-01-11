@@ -42,18 +42,22 @@ class BlockSetAdapter(
             val appCount = blockSet.apps.size
             binding.textApps.text = binding.root.context.getString(R.string.apps_selected, appCount)
 
-            val remaining = storage.getRemainingMinutes(blockSet)
-            val total = blockSet.quotaMinutes
-            val used = total - remaining
-            val progress = if (total > 0) (used * 100) / total else 0
+            val remainingSeconds = storage.getRemainingSeconds(blockSet)
+            val totalSeconds = blockSet.quotaMinutes * 60
+            val usedSeconds = totalSeconds - remainingSeconds
+            val progress = if (totalSeconds > 0) (usedSeconds * 100) / totalSeconds else 0
 
             binding.progressQuota.progress = progress
-            binding.textRemaining.text = binding.root.context.getString(R.string.time_remaining, remaining)
 
-            // Color based on remaining time
+            // Format as MM:SS
+            val minutes = remainingSeconds / 60
+            val seconds = remainingSeconds % 60
+            binding.textRemaining.text = String.format("%d:%02d left", minutes, seconds)
+
+            // Color based on remaining time (in seconds)
             val color = when {
-                remaining <= 0 -> binding.root.context.getColor(R.color.red)
-                remaining <= 10 -> binding.root.context.getColor(R.color.accent)
+                remainingSeconds <= 0 -> binding.root.context.getColor(R.color.red)
+                remainingSeconds <= 60 -> binding.root.context.getColor(R.color.accent)  // Last minute
                 else -> binding.root.context.getColor(R.color.green)
             }
             binding.progressQuota.setIndicatorColor(color)
