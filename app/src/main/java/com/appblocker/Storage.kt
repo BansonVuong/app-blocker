@@ -62,17 +62,26 @@ class Storage(context: Context) {
     }
 
     fun getUsageMinutesInWindow(blockSetId: String, windowMinutes: Int): Int {
+        return getUsageSecondsInWindow(blockSetId, windowMinutes) / 60
+    }
+
+    fun getUsageSecondsInWindow(blockSetId: String, windowMinutes: Int): Int {
         val now = System.currentTimeMillis() / 1000
-        val windowStart = now - (windowMinutes * 60)
+        val windowSeconds = windowMinutes * 60
+        val windowStart = (now / windowSeconds) * windowSeconds
         val timestamps = getUsageTimestamps(blockSetId)
 
-        val usageSeconds = timestamps.count { it >= windowStart }
-        return usageSeconds / 60
+        return timestamps.count { it >= windowStart }
     }
 
     fun getRemainingMinutes(blockSet: BlockSet): Int {
-        val used = getUsageMinutesInWindow(blockSet.id, blockSet.windowMinutes)
-        return maxOf(0, blockSet.quotaMinutes - used)
+        return getRemainingSeconds(blockSet) / 60
+    }
+
+    fun getRemainingSeconds(blockSet: BlockSet): Int {
+        val usedSeconds = getUsageSecondsInWindow(blockSet.id, blockSet.windowMinutes)
+        val quotaSeconds = blockSet.quotaMinutes * 60
+        return maxOf(0, quotaSeconds - usedSeconds)
     }
 
     fun isQuotaExceeded(blockSet: BlockSet): Boolean {

@@ -3,6 +3,7 @@ package com.appblocker
 import android.app.AppOpsManager
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.os.Process
 import android.provider.Settings
@@ -64,6 +65,14 @@ class MainActivity : AppCompatActivity() {
             val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
             startActivity(intent)
         }
+
+        binding.buttonEnableOverlay.setOnClickListener {
+            val intent = Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:$packageName")
+            )
+            startActivity(intent)
+        }
     }
 
     private fun openBlockSetEditor(blockSet: BlockSet?) {
@@ -85,8 +94,9 @@ class MainActivity : AppCompatActivity() {
     private fun checkPermissions() {
         val hasAccessibility = isAccessibilityServiceEnabled()
         val hasUsageStats = hasUsageStatsPermission()
+        val hasOverlay = hasOverlayPermission()
 
-        if (hasAccessibility && hasUsageStats) {
+        if (hasAccessibility && hasUsageStats && hasOverlay) {
             binding.cardPermissions.visibility = View.GONE
         } else {
             binding.cardPermissions.visibility = View.VISIBLE
@@ -94,6 +104,8 @@ class MainActivity : AppCompatActivity() {
                 if (hasAccessibility) View.GONE else View.VISIBLE
             binding.buttonEnableUsageStats.visibility =
                 if (hasUsageStats) View.GONE else View.VISIBLE
+            binding.buttonEnableOverlay.visibility =
+                if (hasOverlay) View.GONE else View.VISIBLE
         }
     }
 
@@ -123,5 +135,9 @@ class MainActivity : AppCompatActivity() {
             packageName
         )
         return mode == AppOpsManager.MODE_ALLOWED
+    }
+
+    private fun hasOverlayPermission(): Boolean {
+        return Settings.canDrawOverlays(this)
     }
 }

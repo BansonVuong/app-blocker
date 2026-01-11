@@ -20,13 +20,10 @@ class BlockSetActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_BLOCK_SET_ID = "block_set_id"
 
-        // Quota options in minutes
-        val QUOTA_OPTIONS = listOf(5, 10, 15, 20, 30, 45, 60)
-        val QUOTA_LABELS = listOf("5 minutes", "10 minutes", "15 minutes", "20 minutes", "30 minutes", "45 minutes", "1 hour")
-
         // Window options in minutes
         val WINDOW_OPTIONS = listOf(5, 10, 15, 20, 30, 60)
         val WINDOW_LABELS = listOf("5 minutes", "10 minutes", "15 minutes", "20 minutes", "30 minutes", "1 hour")
+        private const val DEFAULT_QUOTA_MINUTES = 30
     }
 
     private val appPickerLauncher = registerForActivityResult(
@@ -56,12 +53,16 @@ class BlockSetActivity : AppCompatActivity() {
             blockSet?.let {
                 binding.toolbar.title = getString(R.string.edit_block_set)
                 binding.editName.setText(it.name)
-                binding.spinnerQuota.setSelection(QUOTA_OPTIONS.indexOf(it.quotaMinutes).coerceAtLeast(0))
+                binding.editQuota.setText(it.quotaMinutes.toString())
                 binding.spinnerWindow.setSelection(WINDOW_OPTIONS.indexOf(it.windowMinutes).coerceAtLeast(0))
                 binding.checkCombinedQuota.isChecked = it.combinedQuota
                 selectedApps = it.apps.toMutableList()
                 binding.buttonDelete.visibility = View.VISIBLE
             }
+        } else {
+            val existingCount = storage.getBlockSets().size
+            binding.editName.setText(getString(R.string.default_block_set_name, existingCount + 1))
+            binding.editQuota.setText(DEFAULT_QUOTA_MINUTES.toString())
         }
 
         updateSelectedAppsText()
@@ -69,11 +70,6 @@ class BlockSetActivity : AppCompatActivity() {
     }
 
     private fun setupSpinners() {
-        val quotaAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, QUOTA_LABELS)
-        quotaAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        binding.spinnerQuota.adapter = quotaAdapter
-        binding.spinnerQuota.setSelection(4) // Default to 30 minutes
-
         val windowAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, WINDOW_LABELS)
         windowAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         binding.spinnerWindow.adapter = windowAdapter
@@ -118,9 +114,14 @@ class BlockSetActivity : AppCompatActivity() {
             return
         }
 
-        val quotaIndex = binding.spinnerQuota.selectedItemPosition
+        val quotaText = binding.editQuota.text?.toString()?.trim().orEmpty()
+        val quota = quotaText.toIntOrNull()
+        if (quota == null || quota <= 0) {
+            Toast.makeText(this, "Please enter a valid quota in minutes", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         val windowIndex = binding.spinnerWindow.selectedItemPosition
-        val quota = QUOTA_OPTIONS[quotaIndex]
         val window = WINDOW_OPTIONS[windowIndex]
         val combinedQuota = binding.checkCombinedQuota.isChecked
 

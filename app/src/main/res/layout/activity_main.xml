@@ -53,6 +53,14 @@
                 android:text="@string/enable_usage_stats"
                 android:textColor="@color/primary" />
 
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/buttonEnableOverlay"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/enable_overlay"
+                android:textColor="@color/primary" />
+
         </LinearLayout>
 
     </com.google.android.material.card.MaterialCardView>

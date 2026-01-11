@@ -7,6 +7,6 @@ data class BlockSet(
     var name: String = "",
     var apps: MutableList<String> = mutableListOf(), // package names
     var quotaMinutes: Int = 30,
-    var windowMinutes: Int = 60, // rolling window: 5, 10, 15, 20, 30, or 60 minutes
+    var windowMinutes: Int = 60, // clock-aligned window: 5, 10, 15, 20, 30, or 60 minutes
     var combinedQuota: Boolean = true // if true, all apps share the quota
 )
