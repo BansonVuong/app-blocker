@@ -16,7 +16,8 @@ internal data class SimpleUsageEvent(
 internal fun computeUsageSeconds(
     blockSet: BlockSet,
     events: List<SimpleUsageEvent>,
-    now: Long
+    now: Long,
+    windowStartMs: Long
 ): Int {
     val foregroundStartTimes = mutableMapOf<String, Long>()
     var totalMs = 0L
@@ -28,12 +29,15 @@ internal fun computeUsageSeconds(
         // MOVE_TO_FOREGROUND == ACTIVITY_RESUMED (1) and MOVE_TO_BACKGROUND == ACTIVITY_PAUSED (2)
         when (event.eventType) {
             UsageEvents.Event.ACTIVITY_RESUMED -> {
-                foregroundStartTimes[packageName] = event.timeStamp
+                foregroundStartTimes[packageName] = maxOf(event.timeStamp, windowStartMs)
             }
             UsageEvents.Event.ACTIVITY_PAUSED -> {
                 val startTime = foregroundStartTimes[packageName]
                 if (startTime != null) {
-                    totalMs += event.timeStamp - startTime
+                    val endTime = maxOf(event.timeStamp, windowStartMs)
+                    if (endTime > startTime) {
+                        totalMs += endTime - startTime
+                    }
                     foregroundStartTimes.remove(packageName)
                 }
             }
@@ -109,7 +113,8 @@ class Storage(context: Context) {
         val windowMs = blockSet.windowMinutes * 60 * 1000L
         val windowStart = (now / windowMs) * windowMs // Align to window boundary
 
-        val events = usageStatsManager.queryEvents(windowStart, now)
+        val lookbackStart = maxOf(0L, windowStart - windowMs)
+        val events = usageStatsManager.queryEvents(lookbackStart, now)
         val event = UsageEvents.Event()
         val simplifiedEvents = mutableListOf<SimpleUsageEvent>()
 
@@ -123,7 +128,7 @@ class Storage(context: Context) {
                 )
             )
         }
-        return computeUsageSeconds(blockSet, simplifiedEvents, now)
+        return computeUsageSeconds(blockSet, simplifiedEvents, now, windowStart)
     }
 
     fun getUsageMinutesInWindow(blockSet: BlockSet): Int {

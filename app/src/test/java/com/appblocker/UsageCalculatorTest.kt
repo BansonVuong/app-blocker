@@ -21,7 +21,7 @@ class UsageCalculatorTest {
             SimpleUsageEvent("com.example.b", UsageEvents.Event.ACTIVITY_RESUMED, 5_000L)
         )
 
-        val usedSeconds = computeUsageSeconds(blockSet, events, now)
+        val usedSeconds = computeUsageSeconds(blockSet, events, now, windowStartMs = 0L)
 
         assertEquals(6, usedSeconds)
     }
@@ -42,7 +42,7 @@ class UsageCalculatorTest {
             SimpleUsageEvent("com.example.game", UsageEvents.Event.ACTIVITY_PAUSED, 5_000L)
         )
 
-        val usedSeconds = computeUsageSeconds(blockSet, events, now)
+        val usedSeconds = computeUsageSeconds(blockSet, events, now, windowStartMs = 0L)
 
         assertEquals(4, usedSeconds)
     }
@@ -60,7 +60,7 @@ class UsageCalculatorTest {
             SimpleUsageEvent("com.example.work", UsageEvents.Event.ACTIVITY_RESUMED, 7_000L)
         )
 
-        val usedSeconds = computeUsageSeconds(blockSet, events, now)
+        val usedSeconds = computeUsageSeconds(blockSet, events, now, windowStartMs = 0L)
 
         assertEquals(3, usedSeconds)
     }
@@ -78,7 +78,7 @@ class UsageCalculatorTest {
             SimpleUsageEvent("com.example.media", UsageEvents.Event.ACTIVITY_PAUSED, 4_000L)
         )
 
-        val usedSeconds = computeUsageSeconds(blockSet, events, now)
+        val usedSeconds = computeUsageSeconds(blockSet, events, now, windowStartMs = 0L)
 
         assertEquals(0, usedSeconds)
     }
@@ -99,9 +99,28 @@ class UsageCalculatorTest {
             SimpleUsageEvent("com.example.b", UsageEvents.Event.ACTIVITY_PAUSED, 8_000L)
         )
 
-        val usedSeconds = computeUsageSeconds(blockSet, events, now)
+        val usedSeconds = computeUsageSeconds(blockSet, events, now, windowStartMs = 0L)
 
         assertEquals(9, usedSeconds)
+    }
+
+    @Test
+    fun countsUsageAcrossWindowBoundary() {
+        val blockSet = BlockSet(
+            name = "Focus",
+            apps = mutableListOf("com.example.focus"),
+            quotaMinutes = 10,
+            windowMinutes = 5
+        )
+        val windowStart = 5_000L
+        val now = 9_000L
+        val events = listOf(
+            SimpleUsageEvent("com.example.focus", UsageEvents.Event.ACTIVITY_RESUMED, 2_000L)
+        )
+
+        val usedSeconds = computeUsageSeconds(blockSet, events, now, windowStartMs = windowStart)
+
+        assertEquals(4, usedSeconds)
     }
 
     @Test
