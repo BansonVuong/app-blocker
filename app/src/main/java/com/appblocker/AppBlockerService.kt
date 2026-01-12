@@ -30,6 +30,10 @@ class AppBlockerService : AccessibilityService() {
     private var windowManager: WindowManager? = null
     private var debugOverlayPrefListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
 
+    // Local session tracking to enable immediate blocking when timer runs out
+    private var sessionStartTimeMs: Long = 0
+    private var initialRemainingSeconds: Int = 0
+
     companion object {
         var isRunning = false
             private set
@@ -135,23 +139,31 @@ class AppBlockerService : AccessibilityService() {
         currentTrackedPackage = packageName
         currentBlockSet = blockSet
 
-        // Update overlay immediately
-        updateOverlay(blockSet)
+        // Capture initial state for local time tracking
+        // This allows immediate blocking when timer runs out, without waiting for Android's delayed usage stats
+        sessionStartTimeMs = System.currentTimeMillis()
+        initialRemainingSeconds = storage.getRemainingSeconds(blockSet)
 
-        // Then update overlay periodically - system tracks actual usage time
+        // Update overlay immediately
+        updateOverlayWithLocalTracking(blockSet)
+
+        // Then update overlay periodically with local tracking for immediate response
         overlayUpdateRunnable = object : Runnable {
             override fun run() {
                 currentBlockSet?.let { bs ->
                     // Re-fetch blockSet to get current state
                     val updatedBlockSet = storage.getBlockSets().find { it.id == bs.id }
                     if (updatedBlockSet != null) {
-                        // Check if quota exceeded
-                        if (storage.isQuotaExceeded(updatedBlockSet)) {
+                        // Calculate remaining time using local tracking for immediate response
+                        val localRemainingSeconds = getLocalRemainingSeconds()
+
+                        // Block immediately when local timer hits zero
+                        if (localRemainingSeconds <= 0) {
                             launchBlockedScreen(updatedBlockSet.name, updatedBlockSet.id)
                             stopTracking()
                             return
                         }
-                        updateOverlay(updatedBlockSet)
+                        updateOverlayWithLocalTracking(updatedBlockSet)
                     }
                 }
                 handler.postDelayed(this, OVERLAY_UPDATE_INTERVAL_MS)
@@ -160,12 +172,19 @@ class AppBlockerService : AccessibilityService() {
         handler.postDelayed(overlayUpdateRunnable!!, OVERLAY_UPDATE_INTERVAL_MS)
     }
 
+    private fun getLocalRemainingSeconds(): Int {
+        val elapsedSeconds = ((System.currentTimeMillis() - sessionStartTimeMs) / 1000).toInt()
+        return maxOf(0, initialRemainingSeconds - elapsedSeconds)
+    }
+
     private fun stopTracking() {
         cancelPendingStop()
         overlayUpdateRunnable?.let { handler.removeCallbacks(it) }
         overlayUpdateRunnable = null
         currentTrackedPackage = null
         currentBlockSet = null
+        sessionStartTimeMs = 0
+        initialRemainingSeconds = 0
         updateOverlay(null)
     }
 
@@ -214,6 +233,23 @@ class AppBlockerService : AccessibilityService() {
         }
 
         val remainingSeconds = storage.getRemainingSeconds(blockSet)
+        val view = ensureOverlayView()
+        view.text = formatRemainingTime(remainingSeconds)
+        view.setTextColor(ContextCompat.getColor(this, R.color.white))
+    }
+
+    private fun updateOverlayWithLocalTracking(blockSet: BlockSet?) {
+        if (!Settings.canDrawOverlays(this)) {
+            return
+        }
+
+        if (blockSet == null) {
+            updateOverlay(null)
+            return
+        }
+
+        // Use local tracking for more accurate real-time countdown
+        val remainingSeconds = getLocalRemainingSeconds()
         val view = ensureOverlayView()
         view.text = formatRemainingTime(remainingSeconds)
         view.setTextColor(ContextCompat.getColor(this, R.color.white))

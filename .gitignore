@@ -29,3 +29,4 @@ captures/
 *.aab
 
 .claude/
+tmpclaude-*
