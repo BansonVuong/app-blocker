@@ -11,7 +11,6 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.MotionEvent
-import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.widget.TextView
@@ -65,8 +64,6 @@ class AppBlockerService : AccessibilityService() {
         val isBlocked = blockSet != null
         if (storage.isDebugOverlayEnabled()) {
             updateDebugOverlay(packageName, isBlocked, currentTrackedPackage)
-        } else {
-            debugOverlayView?.visibility = View.GONE
         }
 
         // Ignore our own app and system UI
@@ -187,12 +184,6 @@ class AppBlockerService : AccessibilityService() {
             return
         }
 
-        // If debug mode is off and no blocked app, hide the overlay
-        if (blockSet == null && !storage.isDebugOverlayEnabled()) {
-            overlayView?.visibility = View.GONE
-            return
-        }
-
         val text = if (blockSet == null) {
             "No blocked app"
         } else {
@@ -200,7 +191,6 @@ class AppBlockerService : AccessibilityService() {
             formatRemainingTime(remainingSeconds)
         }
         val view = ensureOverlayView()
-        view.visibility = View.VISIBLE
         view.text = text
         view.setTextColor(ContextCompat.getColor(this, R.color.white))
     }
@@ -255,7 +245,6 @@ class AppBlockerService : AccessibilityService() {
         val text = "$shortName ($status)\ntracking: $trackingInfo"
 
         val view = ensureDebugOverlayView()
-        view.visibility = View.VISIBLE
         view.text = text
     }
 

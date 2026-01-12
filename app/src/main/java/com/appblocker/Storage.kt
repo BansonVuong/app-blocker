@@ -7,6 +7,51 @@ import android.content.SharedPreferences
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 
+internal data class SimpleUsageEvent(
+    val packageName: String,
+    val eventType: Int,
+    val timeStamp: Long
+)
+
+internal fun computeUsageSeconds(
+    blockSet: BlockSet,
+    events: List<SimpleUsageEvent>,
+    now: Long
+): Int {
+    val foregroundStartTimes = mutableMapOf<String, Long>()
+    var totalMs = 0L
+
+    for (event in events) {
+        val packageName = event.packageName
+        if (!blockSet.apps.contains(packageName)) continue
+
+        // MOVE_TO_FOREGROUND == ACTIVITY_RESUMED (1) and MOVE_TO_BACKGROUND == ACTIVITY_PAUSED (2)
+        when (event.eventType) {
+            UsageEvents.Event.ACTIVITY_RESUMED -> {
+                foregroundStartTimes[packageName] = event.timeStamp
+            }
+            UsageEvents.Event.ACTIVITY_PAUSED -> {
+                val startTime = foregroundStartTimes[packageName]
+                if (startTime != null) {
+                    totalMs += event.timeStamp - startTime
+                    foregroundStartTimes.remove(packageName)
+                }
+            }
+        }
+    }
+
+    for ((_, startTime) in foregroundStartTimes) {
+        totalMs += now - startTime
+    }
+
+    return (totalMs / 1000).toInt()
+}
+
+internal fun computeRemainingSeconds(quotaMinutes: Int, usedSeconds: Int): Int {
+    val quotaSeconds = quotaMinutes * 60
+    return maxOf(0, quotaSeconds - usedSeconds)
+}
+
 class Storage(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("app_blocker", Context.MODE_PRIVATE)
     private val gson = Gson()
@@ -48,42 +93,19 @@ class Storage(context: Context) {
 
         val events = usageStatsManager.queryEvents(windowStart, now)
         val event = UsageEvents.Event()
-
-        // Track foreground start times for each app
-        val foregroundStartTimes = mutableMapOf<String, Long>()
-        var totalMs = 0L
+        val simplifiedEvents = mutableListOf<SimpleUsageEvent>()
 
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
-            val packageName = event.packageName
-
-            // Only process apps in this block set
-            if (!blockSet.apps.contains(packageName)) continue
-
-            when (event.eventType) {
-                UsageEvents.Event.MOVE_TO_FOREGROUND,
-                UsageEvents.Event.ACTIVITY_RESUMED -> {
-                    // App came to foreground
-                    foregroundStartTimes[packageName] = event.timeStamp
-                }
-                UsageEvents.Event.MOVE_TO_BACKGROUND,
-                UsageEvents.Event.ACTIVITY_PAUSED -> {
-                    // App went to background - calculate time spent
-                    val startTime = foregroundStartTimes[packageName]
-                    if (startTime != null) {
-                        totalMs += event.timeStamp - startTime
-                        foregroundStartTimes.remove(packageName)
-                    }
-                }
-            }
+            simplifiedEvents.add(
+                SimpleUsageEvent(
+                    packageName = event.packageName,
+                    eventType = event.eventType,
+                    timeStamp = event.timeStamp
+                )
+            )
         }
-
-        // If any app is still in foreground, count time up to now
-        for ((_, startTime) in foregroundStartTimes) {
-            totalMs += now - startTime
-        }
-
-        return (totalMs / 1000).toInt()
+        return computeUsageSeconds(blockSet, simplifiedEvents, now)
     }
 
     fun getUsageMinutesInWindow(blockSet: BlockSet): Int {
@@ -96,8 +118,7 @@ class Storage(context: Context) {
 
     fun getRemainingSeconds(blockSet: BlockSet): Int {
         val usedSeconds = getUsageSecondsInWindow(blockSet)
-        val quotaSeconds = blockSet.quotaMinutes * 60
-        return maxOf(0, quotaSeconds - usedSeconds)
+        return computeRemainingSeconds(blockSet.quotaMinutes, usedSeconds)
     }
 
     fun isQuotaExceeded(blockSet: BlockSet): Boolean {
