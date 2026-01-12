@@ -13,6 +13,7 @@ class AppPickerActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityAppPickerBinding
     private lateinit var adapter: AppPickerAdapter
+    private var preSelectedApps: Set<String> = emptySet()
 
     companion object {
         const val EXTRA_SELECTED_APPS = "selected_apps"
@@ -23,9 +24,9 @@ class AppPickerActivity : AppCompatActivity() {
         binding = ActivityAppPickerBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        val preSelectedApps = intent.getStringArrayListExtra(EXTRA_SELECTED_APPS) ?: arrayListOf()
+        preSelectedApps = (intent.getStringArrayListExtra(EXTRA_SELECTED_APPS) ?: arrayListOf()).toSet()
 
-        setupRecyclerView(preSelectedApps)
+        setupRecyclerView(preSelectedApps.toList())
         setupClickListeners()
         loadApps()
     }
@@ -72,7 +73,10 @@ class AppPickerActivity : AppCompatActivity() {
                         icon = appInfo.loadIcon(pm)
                     )
                 }
-                .sortedBy { it.appName.lowercase() }
+                .sortedWith(compareBy(
+                    { !preSelectedApps.contains(it.packageName) },
+                    { it.appName.lowercase() }
+                ))
 
             runOnUiThread {
                 adapter.setApps(installedApps)

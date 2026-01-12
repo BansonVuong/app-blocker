@@ -70,6 +70,24 @@ class Storage(context: Context) {
         prefs.edit().putBoolean(KEY_DEBUG_OVERLAY_ENABLED, enabled).apply()
     }
 
+    fun registerDebugOverlayEnabledListener(
+        listener: (Boolean) -> Unit
+    ): SharedPreferences.OnSharedPreferenceChangeListener {
+        val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == KEY_DEBUG_OVERLAY_ENABLED) {
+                listener(isDebugOverlayEnabled())
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(prefListener)
+        return prefListener
+    }
+
+    fun unregisterDebugOverlayEnabledListener(
+        prefListener: SharedPreferences.OnSharedPreferenceChangeListener
+    ) {
+        prefs.unregisterOnSharedPreferenceChangeListener(prefListener)
+    }
+
     fun saveBlockSets(blockSets: List<BlockSet>) {
         val json = gson.toJson(blockSets)
         prefs.edit().putString(KEY_BLOCK_SETS, json).apply()

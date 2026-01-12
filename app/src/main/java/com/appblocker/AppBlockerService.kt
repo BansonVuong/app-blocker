@@ -15,6 +15,7 @@ import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.widget.TextView
 import androidx.core.content.ContextCompat
+import android.content.SharedPreferences
 
 class AppBlockerService : AccessibilityService() {
 
@@ -27,6 +28,7 @@ class AppBlockerService : AccessibilityService() {
     private var overlayView: TextView? = null
     private var debugOverlayView: TextView? = null
     private var windowManager: WindowManager? = null
+    private var debugOverlayPrefListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
 
     companion object {
         var isRunning = false
@@ -39,6 +41,17 @@ class AppBlockerService : AccessibilityService() {
         super.onCreate()
         storage = App.instance.storage
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        debugOverlayPrefListener = storage.registerDebugOverlayEnabledListener { enabled ->
+            if (!enabled) {
+                removeDebugOverlay()
+                updateOverlay(null)
+                return@registerDebugOverlayEnabledListener
+            }
+            val trackedPackage = currentTrackedPackage ?: return@registerDebugOverlayEnabledListener
+            val blockSet = storage.getBlockSetForApp(trackedPackage)
+            updateDebugOverlay(trackedPackage, blockSet != null, currentTrackedPackage)
+            updateOverlay(currentBlockSet)
+        }
     }
 
     override fun onServiceConnected() {
@@ -52,6 +65,8 @@ class AppBlockerService : AccessibilityService() {
         isRunning = false
         stopTracking()
         removeOverlay()
+        debugOverlayPrefListener?.let { storage.unregisterDebugOverlayEnabledListener(it) }
+        debugOverlayPrefListener = null
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -59,11 +74,13 @@ class AppBlockerService : AccessibilityService() {
 
         val packageName = event.packageName?.toString() ?: return
 
-        // Update debug overlay with current package info (only if debug mode enabled)
+        // Update or remove debug overlay based on current setting.
         val blockSet = storage.getBlockSetForApp(packageName)
         val isBlocked = blockSet != null
         if (storage.isDebugOverlayEnabled()) {
             updateDebugOverlay(packageName, isBlocked, currentTrackedPackage)
+        } else {
+            removeDebugOverlay()
         }
 
         // Ignore our own app and system UI
@@ -184,14 +201,21 @@ class AppBlockerService : AccessibilityService() {
             return
         }
 
-        val text = if (blockSet == null) {
-            "No blocked app"
-        } else {
-            val remainingSeconds = storage.getRemainingSeconds(blockSet)
-            formatRemainingTime(remainingSeconds)
+        if (blockSet == null) {
+            if (!storage.isDebugOverlayEnabled()) {
+                overlayView?.let { windowManager?.removeView(it) }
+                overlayView = null
+                return
+            }
+            val view = ensureOverlayView()
+            view.text = "No blocked app"
+            view.setTextColor(ContextCompat.getColor(this, R.color.white))
+            return
         }
+
+        val remainingSeconds = storage.getRemainingSeconds(blockSet)
         val view = ensureOverlayView()
-        view.text = text
+        view.text = formatRemainingTime(remainingSeconds)
         view.setTextColor(ContextCompat.getColor(this, R.color.white))
     }
 
@@ -232,6 +256,10 @@ class AppBlockerService : AccessibilityService() {
     private fun removeOverlay() {
         overlayView?.let { windowManager?.removeView(it) }
         overlayView = null
+        removeDebugOverlay()
+    }
+
+    private fun removeDebugOverlay() {
         debugOverlayView?.let { windowManager?.removeView(it) }
         debugOverlayView = null
     }
