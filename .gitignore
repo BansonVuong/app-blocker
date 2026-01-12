@@ -27,3 +27,5 @@ captures/
 
 # Bundles
 *.aab
+
+.claude/
