@@ -124,6 +124,26 @@ class UsageCalculatorTest {
     }
 
     @Test
+    fun clampsSessionStartToWindowStartWhenPausedInsideWindow() {
+        val blockSet = BlockSet(
+            name = "Study",
+            apps = mutableListOf("com.example.study"),
+            quotaMinutes = 10,
+            windowMinutes = 5
+        )
+        val windowStart = 4_000L
+        val now = 8_000L
+        val events = listOf(
+            SimpleUsageEvent("com.example.study", UsageEvents.Event.ACTIVITY_RESUMED, 2_000L),
+            SimpleUsageEvent("com.example.study", UsageEvents.Event.ACTIVITY_PAUSED, 6_000L)
+        )
+
+        val usedSeconds = computeUsageSeconds(blockSet, events, now, windowStartMs = windowStart)
+
+        assertEquals(2, usedSeconds)
+    }
+
+    @Test
     fun computeRemainingSecondsClampsAtZero() {
         assertEquals(0, computeRemainingSeconds(quotaMinutes = 1, usedSeconds = 61))
     }
