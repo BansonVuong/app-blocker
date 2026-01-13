@@ -114,8 +114,10 @@ class AppBlockerService : AccessibilityService() {
             if (currentTrackedPackage != packageName) {
                 stopTracking()
                 startTracking(packageName, blockSet)
-                updateOverlay(blockSet)
             }
+            // Always update overlay when in a blocked app (like debug overlay does)
+            // This ensures overlay stays visible even if system events occur
+            updateOverlayWithLocalTracking(blockSet)
         } else {
             // App not in any block set
             // Only stop tracking if this looks like a real app switch (not a system overlay/dialog)
