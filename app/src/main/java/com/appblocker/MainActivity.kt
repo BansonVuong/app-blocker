@@ -82,16 +82,6 @@ class MainActivity : AppCompatActivity() {
             openBlockSetEditor(null)
         }
 
-        binding.switchDebugOverlay.isChecked = storage.isDebugOverlayEnabled()
-        binding.switchDebugOverlay.setOnCheckedChangeListener { _, isChecked ->
-            storage.setDebugOverlayEnabled(isChecked)
-        }
-
-        binding.switchDebugLogCapture.isChecked = storage.isDebugLogCaptureEnabled()
-        binding.switchDebugLogCapture.setOnCheckedChangeListener { _, isChecked ->
-            storage.setDebugLogCaptureEnabled(isChecked)
-        }
-
         binding.buttonEnableAccessibility.setOnClickListener {
             val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
             startActivity(intent)
@@ -108,6 +98,28 @@ class MainActivity : AppCompatActivity() {
                 Uri.parse("package:$packageName")
             )
             startActivity(intent)
+        }
+
+        setupDebugTools()
+    }
+
+    // ===== Debug-only UI (easy to remove) =====
+    private fun setupDebugTools() {
+        if (!BuildConfig.DEBUG_TOOLS_ENABLED) {
+            binding.switchDebugOverlay.visibility = View.GONE
+            binding.switchDebugLogCapture.visibility = View.GONE
+            binding.buttonExportLogs.visibility = View.GONE
+            binding.buttonShareLogs.visibility = View.GONE
+            return
+        }
+        binding.switchDebugOverlay.isChecked = storage.isDebugOverlayEnabled()
+        binding.switchDebugOverlay.setOnCheckedChangeListener { _, isChecked ->
+            storage.setDebugOverlayEnabled(isChecked)
+        }
+
+        binding.switchDebugLogCapture.isChecked = storage.isDebugLogCaptureEnabled()
+        binding.switchDebugLogCapture.setOnCheckedChangeListener { _, isChecked ->
+            storage.setDebugLogCaptureEnabled(isChecked)
         }
 
         binding.buttonExportLogs.setOnClickListener {

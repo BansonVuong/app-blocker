@@ -83,20 +83,13 @@ class AppBlockerService : AccessibilityService() {
 
         val packageName = event.packageName?.toString() ?: return
         val className = event.className?.toString()
-        logDebug(
-            "event",
-            "pkg=$packageName class=${className ?: "null"} tracked=$currentTrackedPackage pendingStop=${pendingStopRunnable != null}"
-        )
+        logDebug("event", buildEventLogMessage(packageName, className))
 
         // Update or remove debug overlay based on current setting.
         val blockSet = storage.getBlockSetForApp(packageName)
         val isBlocked = blockSet != null
         logDebug("event", "isBlocked=$isBlocked debug=${storage.isDebugOverlayEnabled()}")
-        if (storage.isDebugOverlayEnabled()) {
-            updateDebugOverlay(packageName, isBlocked, currentTrackedPackage)
-        } else {
-            removeDebugOverlay()
-        }
+        handleDebugOverlay(packageName, isBlocked)
 
         // Ignore system UI
         if (packageName == "com.android.systemui") {
@@ -432,9 +425,27 @@ class AppBlockerService : AccessibilityService() {
     }
 
     private fun logDebug(tag: String, message: String) {
+        if (!BuildConfig.DEBUG_TOOLS_ENABLED) return
         if (!storage.isDebugOverlayEnabled() && !storage.isDebugLogCaptureEnabled()) return
         Log.d(LOG_TAG, "[$tag] $message")
         DebugLogStore.append(applicationContext, tag, message)
+    }
+
+    // ===== Debug-only helpers (easy to remove) =====
+
+    private fun handleDebugOverlay(packageName: String, isBlocked: Boolean) {
+        if (!BuildConfig.DEBUG_TOOLS_ENABLED) return
+        if (storage.isDebugOverlayEnabled()) {
+            updateDebugOverlay(packageName, isBlocked, currentTrackedPackage)
+        } else {
+            removeDebugOverlay()
+        }
+    }
+
+    private fun buildEventLogMessage(packageName: String, className: String?): String {
+        val safeClassName = className ?: "null"
+        return "pkg=$packageName class=$safeClassName tracked=$currentTrackedPackage " +
+            "pendingStop=${pendingStopRunnable != null}"
     }
 
     override fun onInterrupt() {

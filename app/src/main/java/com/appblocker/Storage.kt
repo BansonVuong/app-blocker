@@ -67,6 +67,7 @@ class Storage(context: Context) {
         private const val KEY_DEBUG_LOG_CAPTURE_ENABLED = "debug_log_capture_enabled"
     }
 
+    // ===== Debug-only prefs (easy to remove) =====
     fun isDebugOverlayEnabled(): Boolean {
         return prefs.getBoolean(KEY_DEBUG_OVERLAY_ENABLED, false)
     }
@@ -82,6 +83,7 @@ class Storage(context: Context) {
     fun setDebugLogCaptureEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_DEBUG_LOG_CAPTURE_ENABLED, enabled).apply()
     }
+    // ===== End debug-only prefs =====
 
     fun registerDebugOverlayEnabledListener(
         listener: (Boolean) -> Unit

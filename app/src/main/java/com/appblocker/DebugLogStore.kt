@@ -15,6 +15,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+// Debug-only file logger (easy to remove).
 object DebugLogStore {
     private const val LOG_FILE_NAME = "overlay-debug.log"
     private const val MAX_BYTES = 512 * 1024
@@ -27,6 +28,7 @@ object DebugLogStore {
     )
 
     fun append(context: Context, tag: String, message: String) {
+        if (!BuildConfig.DEBUG_TOOLS_ENABLED) return
         val timestamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())
         val line = "$timestamp [$tag] $message"
         synchronized(lock) {
@@ -42,6 +44,7 @@ object DebugLogStore {
     }
 
     fun export(context: Context): ExportResult? {
+        if (!BuildConfig.DEBUG_TOOLS_ENABLED) return null
         synchronized(lock) {
             val source = File(context.filesDir, LOG_FILE_NAME)
             if (!source.exists()) return null
@@ -79,6 +82,7 @@ object DebugLogStore {
     }
 
     fun exportForShare(context: Context): Uri? {
+        if (!BuildConfig.DEBUG_TOOLS_ENABLED) return null
         val result = export(context) ?: return null
         if (result.uri != null) return result.uri
         val path = result.path ?: return null
