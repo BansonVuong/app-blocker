@@ -82,7 +82,11 @@ class AppBlockerService : AccessibilityService() {
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
 
         val packageName = event.packageName?.toString() ?: return
-        logDebug("event", "pkg=$packageName tracked=$currentTrackedPackage pendingStop=${pendingStopRunnable != null}")
+        val className = event.className?.toString()
+        logDebug(
+            "event",
+            "pkg=$packageName class=${className ?: "null"} tracked=$currentTrackedPackage pendingStop=${pendingStopRunnable != null}"
+        )
 
         // Update or remove debug overlay based on current setting.
         val blockSet = storage.getBlockSetForApp(packageName)
@@ -131,7 +135,12 @@ class AppBlockerService : AccessibilityService() {
             val now = System.currentTimeMillis()
             val recentlyInBlockedApp = currentTrackedPackage != null &&
                 (now - lastBlockedEventTimeMs) < 1500
-            if (recentlyInBlockedApp) {
+            val isAppBlockerActivity = className?.startsWith(this.packageName) == true
+            if (currentTrackedPackage != null && !isAppBlockerActivity) {
+                logDebug("track", "ignore appblocker non-activity event during blocked app")
+                return
+            }
+            if (recentlyInBlockedApp && !isAppBlockerActivity) {
                 logDebug("track", "ignore appblocker event during blocked app")
                 return
             }
