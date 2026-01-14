@@ -158,4 +158,42 @@ class Storage(context: Context) {
     fun isQuotaExceeded(blockSet: BlockSet): Boolean {
         return getRemainingSeconds(blockSet) <= 0
     }
+
+    fun getUsageSecondsLastWeek(packageNames: Set<String>): Map<String, Int> {
+        if (packageNames.isEmpty()) return emptyMap()
+        val now = System.currentTimeMillis()
+        val windowStart = now - 7L * 24 * 60 * 60 * 1000
+        val events = usageStatsManager.queryEvents(windowStart, now)
+        val event = UsageEvents.Event()
+        val foregroundStartTimes = mutableMapOf<String, Long>()
+        val usageMs = mutableMapOf<String, Long>()
+
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            val packageName = event.packageName
+            if (!packageNames.contains(packageName)) continue
+
+            when (event.eventType) {
+                UsageEvents.Event.ACTIVITY_RESUMED -> {
+                    foregroundStartTimes[packageName] = maxOf(event.timeStamp, windowStart)
+                }
+                UsageEvents.Event.ACTIVITY_PAUSED -> {
+                    val startTime = foregroundStartTimes[packageName]
+                    if (startTime != null) {
+                        val endTime = maxOf(event.timeStamp, windowStart)
+                        if (endTime > startTime) {
+                            usageMs[packageName] = (usageMs[packageName] ?: 0L) + (endTime - startTime)
+                        }
+                        foregroundStartTimes.remove(packageName)
+                    }
+                }
+            }
+        }
+
+        for ((packageName, startTime) in foregroundStartTimes) {
+            usageMs[packageName] = (usageMs[packageName] ?: 0L) + (now - startTime)
+        }
+
+        return usageMs.mapValues { (_, ms) -> (ms / 1000).toInt() }
+    }
 }

@@ -46,6 +46,7 @@ class AppPickerAdapter(
         fun bind(app: AppInfo) {
             binding.imageIcon.setImageDrawable(app.icon)
             binding.textAppName.text = app.appName
+            binding.textUsageTime.text = formatUsageTime(app.usageSecondsLastWeek)
             binding.checkbox.isChecked = selectedPackages.contains(app.packageName)
 
             binding.root.setOnClickListener {
@@ -58,5 +59,17 @@ class AppPickerAdapter(
                 onSelectionChanged(selectedPackages.toList())
             }
         }
+    }
+
+    private fun formatUsageTime(usageSeconds: Int): String {
+        val totalMinutes = usageSeconds / 60
+        val hours = totalMinutes / 60
+        val minutes = totalMinutes % 60
+        val formatted = if (hours > 0) {
+            "${hours}h ${minutes}m"
+        } else {
+            "${minutes}m"
+        }
+        return "Time used: $formatted"
     }
 }

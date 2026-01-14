@@ -66,20 +66,24 @@ class AppPickerActivity : AppCompatActivity() {
                     pm.getLaunchIntentForPackage(appInfo.packageName) != null &&
                             appInfo.packageName != packageName
                 }
-                .map { appInfo ->
-                    AppInfo(
-                        packageName = appInfo.packageName,
-                        appName = appInfo.loadLabel(pm).toString(),
-                        icon = appInfo.loadIcon(pm)
-                    )
-                }
-                .sortedWith(compareBy(
-                    { !preSelectedApps.contains(it.packageName) },
-                    { it.appName.lowercase() }
-                ))
+            val packageNames = installedApps.map { it.packageName }.toSet()
+            val usageSecondsByPackage = App.instance.storage.getUsageSecondsLastWeek(packageNames)
+            val apps = installedApps.map { appInfo ->
+                val usageSeconds = usageSecondsByPackage[appInfo.packageName] ?: 0
+                AppInfo(
+                    packageName = appInfo.packageName,
+                    appName = appInfo.loadLabel(pm).toString(),
+                    icon = appInfo.loadIcon(pm),
+                    usageSecondsLastWeek = usageSeconds
+                )
+            }
+                .sortedWith(
+                    compareByDescending<AppInfo> { it.usageSecondsLastWeek }
+                        .thenBy { it.appName.lowercase() }
+                )
 
             runOnUiThread {
-                adapter.setApps(installedApps)
+                adapter.setApps(apps)
                 binding.progressBar.visibility = View.GONE
                 binding.recyclerApps.visibility = View.VISIBLE
             }
