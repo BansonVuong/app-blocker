@@ -105,6 +105,11 @@ class AppBlockerService : AccessibilityService() {
 
         // blockSet already looked up above for debug overlay
         if (blockSet != null) {
+            if (isInAppBrowserClass(className)) {
+                logDebug("track", "in-app browser detected for $packageName class=$className")
+                stopTracking()
+                return
+            }
             lastBlockedEventTimeMs = System.currentTimeMillis()
             cancelPendingStop()
             // Check if quota is exceeded
@@ -148,11 +153,7 @@ class AppBlockerService : AccessibilityService() {
             // App not in any block set
             // Only stop tracking if this looks like a real app switch (not a system overlay/dialog)
             // System overlays, keyboards, etc. often have short package names or system prefixes
-            val isLikelyOverlay = packageName.startsWith("com.android.") ||
-                packageName.startsWith("com.google.android.inputmethod") ||
-                packageName.startsWith("com.samsung.") ||
-                packageName.contains("keyboard") ||
-                packageName.contains("overlay")
+            val isLikelyOverlay = isLikelyOverlayPackage(packageName)
             
             if (!isLikelyOverlay) {
                 // This is a real app that's not blocked - stop tracking
@@ -446,6 +447,47 @@ class AppBlockerService : AccessibilityService() {
         val safeClassName = className ?: "null"
         return "pkg=$packageName class=$safeClassName tracked=$currentTrackedPackage " +
             "pendingStop=${pendingStopRunnable != null}"
+    }
+
+    private fun isLikelyOverlayPackage(packageName: String): Boolean {
+        val realAppOverrides = setOf(
+            "com.android.chrome",
+            "com.google.android.apps.chrome",
+            "com.chrome.beta",
+            "com.chrome.dev",
+            "com.chrome.canary",
+            "org.mozilla.firefox",
+            "org.mozilla.firefox_beta",
+            "org.mozilla.fenix",
+            "com.brave.browser",
+            "com.microsoft.emmx",
+            "com.opera.browser",
+            "com.opera.mini.native",
+            "com.sec.android.app.sbrowser"
+        )
+        if (packageName in realAppOverrides) return false
+
+        return packageName == "com.android.systemui" ||
+            packageName == "com.android.permissioncontroller" ||
+            packageName == "com.google.android.permissioncontroller" ||
+            packageName.startsWith("com.google.android.inputmethod") ||
+            packageName.contains("keyboard") ||
+            packageName.contains("overlay")
+    }
+
+    private fun isInAppBrowserClass(className: String?): Boolean {
+        if (className == null) return false
+        val normalized = className.lowercase()
+        val indicators = listOf(
+            "customtab",
+            "customtabs",
+            "chrome",
+            "browser",
+            "webview",
+            "webactivity",
+            "inappbrowser"
+        )
+        return indicators.any { normalized.contains(it) }
     }
 
     override fun onInterrupt() {
