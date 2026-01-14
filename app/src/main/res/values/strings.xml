@@ -26,4 +26,10 @@
     <string name="permissions_required">Permissions Required</string>
     <string name="combined_quota">Combined quota for all apps</string>
     <string name="debug_overlay">Debug overlay</string>
+    <string name="capture_debug_logs">Capture debug logs</string>
+    <string name="export_debug_logs">Export debug logs</string>
+    <string name="share_debug_logs">Share debug logs</string>
+    <string name="export_logs_saved_downloads">Saved logs to Downloads: %1$s</string>
+    <string name="export_logs_saved_app_dir">Saved logs to app files: %1$s</string>
+    <string name="export_logs_missing">No debug logs yet. Enable Debug overlay and try again.</string>
 </resources>

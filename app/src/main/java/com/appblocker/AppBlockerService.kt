@@ -16,6 +16,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import android.content.SharedPreferences
+import android.util.Log
 
 class AppBlockerService : AccessibilityService() {
 
@@ -29,6 +30,7 @@ class AppBlockerService : AccessibilityService() {
     private var debugOverlayView: TextView? = null
     private var windowManager: WindowManager? = null
     private var debugOverlayPrefListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
+    private var lastBlockedEventTimeMs: Long = 0
 
     // Local session tracking to enable immediate blocking when timer runs out
     private var sessionStartTimeMs: Long = 0
@@ -39,6 +41,7 @@ class AppBlockerService : AccessibilityService() {
             private set
         private const val OVERLAY_UPDATE_INTERVAL_MS = 1000L // Update overlay every second
         private const val OVERLAY_MARGIN_DP = 12
+        private const val LOG_TAG = "AppBlockerOverlay"
     }
 
     override fun onCreate() {
@@ -48,7 +51,9 @@ class AppBlockerService : AccessibilityService() {
         debugOverlayPrefListener = storage.registerDebugOverlayEnabledListener { enabled ->
             if (!enabled) {
                 removeDebugOverlay()
-                updateOverlay(null)
+                // Update timer overlay based on current tracking state
+                // If tracking a blocked app, show timer; otherwise remove overlay
+                updateOverlayWithLocalTracking(currentBlockSet)
                 return@registerDebugOverlayEnabledListener
             }
             val trackedPackage = currentTrackedPackage ?: return@registerDebugOverlayEnabledListener
@@ -77,24 +82,25 @@ class AppBlockerService : AccessibilityService() {
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
 
         val packageName = event.packageName?.toString() ?: return
+        logDebug("event", "pkg=$packageName tracked=$currentTrackedPackage pendingStop=${pendingStopRunnable != null}")
 
         // Update or remove debug overlay based on current setting.
         val blockSet = storage.getBlockSetForApp(packageName)
         val isBlocked = blockSet != null
+        logDebug("event", "isBlocked=$isBlocked debug=${storage.isDebugOverlayEnabled()}")
         if (storage.isDebugOverlayEnabled()) {
             updateDebugOverlay(packageName, isBlocked, currentTrackedPackage)
         } else {
             removeDebugOverlay()
         }
 
-        // Ignore our own app and system UI
+        // Ignore system UI
         if (packageName == "com.android.systemui") {
             // Ignore transient system UI overlays (e.g., notification shade)
             return
         }
 
-        if (packageName == this.packageName ||
-            packageName == "com.android.launcher" ||
+        if (packageName == "com.android.launcher" ||
             packageName.contains("launcher")) {
             stopTracking()
             return
@@ -102,9 +108,11 @@ class AppBlockerService : AccessibilityService() {
 
         // blockSet already looked up above for debug overlay
         if (blockSet != null) {
+            lastBlockedEventTimeMs = System.currentTimeMillis()
             cancelPendingStop()
             // Check if quota is exceeded
             if (storage.isQuotaExceeded(blockSet)) {
+                logDebug("blocked", "quota exceeded for ${blockSet.name}")
                 launchBlockedScreen(blockSet.name, blockSet.id)
                 stopTracking()
                 return
@@ -112,12 +120,28 @@ class AppBlockerService : AccessibilityService() {
 
             // Start or continue tracking for overlay updates
             if (currentTrackedPackage != packageName) {
+                logDebug("track", "switch to blocked $packageName")
                 stopTracking()
                 startTracking(packageName, blockSet)
             }
             // Always update overlay when in a blocked app (like debug overlay does)
             // This ensures overlay stays visible even if system events occur
             updateOverlayWithLocalTracking(blockSet)
+        } else if (packageName == this.packageName) {
+            val now = System.currentTimeMillis()
+            val recentlyInBlockedApp = currentTrackedPackage != null &&
+                (now - lastBlockedEventTimeMs) < 1500
+            if (recentlyInBlockedApp) {
+                logDebug("track", "ignore appblocker event during blocked app")
+                return
+            }
+            if (currentTrackedPackage != null) {
+                logDebug("track", "schedule stop due to appblocker event while tracking")
+                scheduleStopTracking()
+            } else {
+                logDebug("track", "stop due to appblocker event")
+                stopTracking()
+            }
         } else {
             // App not in any block set
             // Only stop tracking if this looks like a real app switch (not a system overlay/dialog)
@@ -130,6 +154,7 @@ class AppBlockerService : AccessibilityService() {
             
             if (!isLikelyOverlay) {
                 // This is a real app that's not blocked - stop tracking
+                logDebug("track", "schedule stop due to $packageName (likelyOverlay=$isLikelyOverlay)")
                 scheduleStopTracking()
             }
             // If it's likely an overlay, just ignore it and keep tracking
@@ -140,6 +165,7 @@ class AppBlockerService : AccessibilityService() {
         cancelPendingStop()
         currentTrackedPackage = packageName
         currentBlockSet = blockSet
+        logDebug("track", "start $packageName blockSet=${blockSet.name}")
 
         // Capture initial state for local time tracking
         // This allows immediate blocking when timer runs out, without waiting for Android's delayed usage stats
@@ -187,6 +213,7 @@ class AppBlockerService : AccessibilityService() {
         currentBlockSet = null
         sessionStartTimeMs = 0
         initialRemainingSeconds = 0
+        logDebug("track", "stop")
         updateOverlay(null)
     }
 
@@ -196,13 +223,18 @@ class AppBlockerService : AccessibilityService() {
             return
         }
         if (pendingStopRunnable != null) return
+        logDebug("track", "schedule stop in 1s")
         pendingStopRunnable = Runnable {
+            logDebug("track", "stop runnable fired")
             stopTracking()
         }
         handler.postDelayed(pendingStopRunnable!!, 1000L)
     }
 
     private fun cancelPendingStop() {
+        if (pendingStopRunnable != null) {
+            logDebug("track", "cancel pending stop")
+        }
         pendingStopRunnable?.let { handler.removeCallbacks(it) }
         pendingStopRunnable = null
     }
@@ -221,9 +253,11 @@ class AppBlockerService : AccessibilityService() {
         if (!Settings.canDrawOverlays(this)) {
             return
         }
+        logDebug("overlay", "update blockSet=${blockSet?.name} view=${overlayView != null}")
 
         if (blockSet == null) {
             if (!storage.isDebugOverlayEnabled()) {
+                logDebug("overlay", "remove (no blockSet)")
                 overlayView?.let { windowManager?.removeView(it) }
                 overlayView = null
                 return
@@ -246,6 +280,7 @@ class AppBlockerService : AccessibilityService() {
         }
 
         if (blockSet == null) {
+            logDebug("overlay", "local update with null blockSet")
             updateOverlay(null)
             return
         }
@@ -253,6 +288,7 @@ class AppBlockerService : AccessibilityService() {
         // Use local tracking for more accurate real-time countdown
         val remainingSeconds = getLocalRemainingSeconds()
         val view = ensureOverlayView()
+        logDebug("overlay", "local update blockSet=${blockSet.name} remaining=$remainingSeconds")
         view.text = formatRemainingTime(remainingSeconds)
         view.setTextColor(ContextCompat.getColor(this, R.color.white))
     }
@@ -273,8 +309,8 @@ class AppBlockerService : AccessibilityService() {
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O)
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP_MR1)
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
             else
                 WindowManager.LayoutParams.TYPE_PHONE,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
@@ -292,12 +328,14 @@ class AppBlockerService : AccessibilityService() {
     }
 
     private fun removeOverlay() {
+        logDebug("overlay", "remove")
         overlayView?.let { windowManager?.removeView(it) }
         overlayView = null
         removeDebugOverlay()
     }
 
     private fun removeDebugOverlay() {
+        logDebug("debug", "remove")
         debugOverlayView?.let { windowManager?.removeView(it) }
         debugOverlayView = null
     }
@@ -311,6 +349,7 @@ class AppBlockerService : AccessibilityService() {
         val text = "$shortName ($status)\ntracking: $trackingInfo"
 
         val view = ensureDebugOverlayView()
+        logDebug("debug", "update $text")
         view.text = text
     }
 
@@ -330,8 +369,8 @@ class AppBlockerService : AccessibilityService() {
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O)
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP_MR1)
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
             else
                 WindowManager.LayoutParams.TYPE_PHONE,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
@@ -381,6 +420,12 @@ class AppBlockerService : AccessibilityService() {
     private fun dpToPx(dp: Int): Int {
         val density = resources.displayMetrics.density
         return (dp * density).toInt()
+    }
+
+    private fun logDebug(tag: String, message: String) {
+        if (!storage.isDebugOverlayEnabled() && !storage.isDebugLogCaptureEnabled()) return
+        Log.d(LOG_TAG, "[$tag] $message")
+        DebugLogStore.append(applicationContext, tag, message)
     }
 
     override fun onInterrupt() {

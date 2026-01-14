@@ -64,6 +64,7 @@ class Storage(context: Context) {
     companion object {
         private const val KEY_BLOCK_SETS = "block_sets"
         private const val KEY_DEBUG_OVERLAY_ENABLED = "debug_overlay_enabled"
+        private const val KEY_DEBUG_LOG_CAPTURE_ENABLED = "debug_log_capture_enabled"
     }
 
     fun isDebugOverlayEnabled(): Boolean {
@@ -72,6 +73,14 @@ class Storage(context: Context) {
 
     fun setDebugOverlayEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_DEBUG_OVERLAY_ENABLED, enabled).apply()
+    }
+
+    fun isDebugLogCaptureEnabled(): Boolean {
+        return prefs.getBoolean(KEY_DEBUG_LOG_CAPTURE_ENABLED, false)
+    }
+
+    fun setDebugLogCaptureEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_DEBUG_LOG_CAPTURE_ENABLED, enabled).apply()
     }
 
     fun registerDebugOverlayEnabledListener(

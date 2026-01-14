@@ -24,6 +24,36 @@
         android:text="@string/debug_overlay"
         app:layout_constraintTop_toBottomOf="@id/toolbar" />
 
+    <com.google.android.material.materialswitch.MaterialSwitch
+        android:id="@+id/switchDebugLogCapture"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp"
+        android:text="@string/capture_debug_logs"
+        app:layout_constraintTop_toBottomOf="@id/switchDebugOverlay" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/buttonExportLogs"
+        style="@style/Widget.Material3.Button.TextButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp"
+        android:text="@string/export_debug_logs"
+        android:textColor="@color/primary"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/switchDebugLogCapture" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/buttonShareLogs"
+        style="@style/Widget.Material3.Button.TextButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp"
+        android:text="@string/share_debug_logs"
+        android:textColor="@color/primary"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/buttonExportLogs" />
+
     <!-- Permission warning card -->
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/cardPermissions"
@@ -32,7 +62,7 @@
         android:layout_margin="16dp"
         android:visibility="gone"
         app:cardBackgroundColor="#FFF3E0"
-        app:layout_constraintTop_toBottomOf="@id/switchDebugOverlay">
+        app:layout_constraintTop_toBottomOf="@id/buttonShareLogs">
 
         <LinearLayout
             android:layout_width="match_parent"

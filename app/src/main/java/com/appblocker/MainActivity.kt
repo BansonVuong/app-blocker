@@ -11,6 +11,7 @@ import android.os.Process
 import android.provider.Settings
 import android.text.TextUtils
 import android.view.View
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -86,6 +87,11 @@ class MainActivity : AppCompatActivity() {
             storage.setDebugOverlayEnabled(isChecked)
         }
 
+        binding.switchDebugLogCapture.isChecked = storage.isDebugLogCaptureEnabled()
+        binding.switchDebugLogCapture.setOnCheckedChangeListener { _, isChecked ->
+            storage.setDebugLogCaptureEnabled(isChecked)
+        }
+
         binding.buttonEnableAccessibility.setOnClickListener {
             val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
             startActivity(intent)
@@ -102,6 +108,34 @@ class MainActivity : AppCompatActivity() {
                 Uri.parse("package:$packageName")
             )
             startActivity(intent)
+        }
+
+        binding.buttonExportLogs.setOnClickListener {
+            val result = DebugLogStore.export(this)
+            if (result == null) {
+                Toast.makeText(this, getString(R.string.export_logs_missing), Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+            val message = if (result.path != null) {
+                getString(R.string.export_logs_saved_app_dir, result.path)
+            } else {
+                getString(R.string.export_logs_saved_downloads, result.displayName)
+            }
+            Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+        }
+
+        binding.buttonShareLogs.setOnClickListener {
+            val uri = DebugLogStore.exportForShare(this)
+            if (uri == null) {
+                Toast.makeText(this, getString(R.string.export_logs_missing), Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(shareIntent, getString(R.string.share_debug_logs)))
         }
     }
 
