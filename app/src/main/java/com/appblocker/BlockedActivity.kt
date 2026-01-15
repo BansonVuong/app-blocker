@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.View
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import com.appblocker.databinding.ActivityBlockedBinding
 import java.text.SimpleDateFormat
@@ -48,11 +49,15 @@ class BlockedActivity : AppCompatActivity() {
         binding.buttonGoBack.setOnClickListener {
             goHome()
         }
-    }
 
-    override fun onBackPressed() {
-        super.onBackPressed()
-        goHome()
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    goHome()
+                }
+            }
+        )
     }
 
     override fun onResume() {

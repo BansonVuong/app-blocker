@@ -15,6 +15,7 @@ import org.robolectric.Shadows
 import org.robolectric.annotation.Config
 import androidx.test.core.app.ApplicationProvider
 
+@Suppress("DEPRECATION")
 @RunWith(RobolectricTestRunner::class)
 @Config(application = App::class)
 class AppBlockerServiceTest {
@@ -34,7 +35,8 @@ class AppBlockerServiceTest {
     }
 
     private fun createWindowStateChangedEvent(packageName: String): AccessibilityEvent {
-        return AccessibilityEvent.obtain(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED).apply {
+        return AccessibilityEvent.obtain().apply {
+            eventType = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
             this.packageName = packageName
         }
     }
@@ -58,7 +60,8 @@ class AppBlockerServiceTest {
 
         val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
 
-        val event = AccessibilityEvent.obtain(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED).apply {
+        val event = AccessibilityEvent.obtain().apply {
+            eventType = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
             packageName = "com.example.blocked"
         }
 
@@ -82,7 +85,8 @@ class AppBlockerServiceTest {
 
         val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
 
-        val event = AccessibilityEvent.obtain(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED).apply {
+        val event = AccessibilityEvent.obtain().apply {
+            eventType = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
             packageName = "com.example.unblocked"
         }
 
@@ -448,7 +452,8 @@ class AppBlockerServiceTest {
         val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
 
         // Send a different event type
-        val event = AccessibilityEvent.obtain(AccessibilityEvent.TYPE_VIEW_CLICKED).apply {
+        val event = AccessibilityEvent.obtain().apply {
+            eventType = AccessibilityEvent.TYPE_VIEW_CLICKED
             packageName = "com.instagram.android"
         }
         service.onAccessibilityEvent(event)
@@ -472,7 +477,8 @@ class AppBlockerServiceTest {
         val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
 
         // Send event with null package name
-        val event = AccessibilityEvent.obtain(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED).apply {
+        val event = AccessibilityEvent.obtain().apply {
+            eventType = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
             packageName = null
         }
         service.onAccessibilityEvent(event)

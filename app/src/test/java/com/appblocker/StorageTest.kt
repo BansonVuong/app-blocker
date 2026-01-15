@@ -98,4 +98,16 @@ class StorageTest {
 
         assertEquals(listOf(true, false), observed)
     }
+
+    @Test
+    fun overlayPositionPersistsPerPackage() {
+        val storage = Storage(context)
+        assertNull(storage.getOverlayPosition("com.example.app"))
+
+        storage.setOverlayPosition("com.example.app", 120, 240)
+        storage.setOverlayPosition("com.example.other", 5, 10)
+
+        assertEquals(120 to 240, storage.getOverlayPosition("com.example.app"))
+        assertEquals(5 to 10, storage.getOverlayPosition("com.example.other"))
+    }
 }
