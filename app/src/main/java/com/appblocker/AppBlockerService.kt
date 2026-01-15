@@ -2,7 +2,9 @@ package com.appblocker
 
 import android.accessibilityservice.AccessibilityService
 import android.annotation.SuppressLint
+import android.content.BroadcastReceiver
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
@@ -31,6 +33,8 @@ class AppBlockerService : AccessibilityService() {
     private var windowManager: WindowManager? = null
     private var debugOverlayPrefListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
     private var lastBlockedEventTimeMs: Long = 0
+    private var screenStateReceiver: BroadcastReceiver? = null
+    private var isScreenOff: Boolean = false
 
     // Local session tracking to enable immediate blocking when timer runs out
     private var sessionStartTimeMs: Long = 0
@@ -48,6 +52,28 @@ class AppBlockerService : AccessibilityService() {
         super.onCreate()
         storage = App.instance.storage
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        screenStateReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: android.content.Context?, intent: Intent?) {
+                when (intent?.action) {
+                    Intent.ACTION_SCREEN_OFF -> {
+                        isScreenOff = true
+                        stopTracking()
+                        removeOverlay()
+                        removeDebugOverlay()
+                    }
+                    Intent.ACTION_SCREEN_ON -> {
+                        isScreenOff = false
+                    }
+                }
+            }
+        }
+        registerReceiver(
+            screenStateReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_SCREEN_ON)
+            }
+        )
         debugOverlayPrefListener = storage.registerDebugOverlayEnabledListener { enabled ->
             if (!enabled) {
                 removeDebugOverlay()
@@ -76,6 +102,8 @@ class AppBlockerService : AccessibilityService() {
         removeOverlay()
         debugOverlayPrefListener?.let { storage.unregisterDebugOverlayEnabledListener(it) }
         debugOverlayPrefListener = null
+        screenStateReceiver?.let { unregisterReceiver(it) }
+        screenStateReceiver = null
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -256,6 +284,10 @@ class AppBlockerService : AccessibilityService() {
         if (!Settings.canDrawOverlays(this)) {
             return
         }
+        if (isScreenOff) {
+            removeOverlay()
+            return
+        }
         logDebug("overlay", "update blockSet=${blockSet?.name} view=${overlayView != null}")
 
         if (blockSet == null) {
@@ -279,6 +311,10 @@ class AppBlockerService : AccessibilityService() {
 
     private fun updateOverlayWithLocalTracking(blockSet: BlockSet?) {
         if (!Settings.canDrawOverlays(this)) {
+            return
+        }
+        if (isScreenOff) {
+            removeOverlay()
             return
         }
 
@@ -345,6 +381,7 @@ class AppBlockerService : AccessibilityService() {
 
     private fun updateDebugOverlay(packageName: String, isBlocked: Boolean, tracking: String?) {
         if (!Settings.canDrawOverlays(this)) return
+        if (isScreenOff) return
 
         val shortName = packageName.substringAfterLast(".")
         val status = if (isBlocked) "BLOCKED" else "not blocked"
