@@ -29,6 +29,7 @@ class AppBlockerService : AccessibilityService() {
     private var overlayUpdateRunnable: Runnable? = null
     private var pendingStopRunnable: Runnable? = null
     private var overlayView: TextView? = null
+    private var overlayLayoutParams: WindowManager.LayoutParams? = null
     private var debugOverlayView: TextView? = null
     private var windowManager: WindowManager? = null
     private var debugOverlayPrefListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
@@ -205,6 +206,7 @@ class AppBlockerService : AccessibilityService() {
 
         // Update overlay immediately
         updateOverlayWithLocalTracking(blockSet)
+        applyStoredOverlayPosition(packageName)
 
         // Then update overlay periodically with local tracking for immediate response
         overlayUpdateRunnable = object : Runnable {
@@ -332,6 +334,7 @@ class AppBlockerService : AccessibilityService() {
         view.setTextColor(ContextCompat.getColor(this, R.color.white))
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     private fun ensureOverlayView(): TextView {
         if (overlayView != null) return overlayView!!
 
@@ -353,16 +356,46 @@ class AppBlockerService : AccessibilityService() {
             else
                 WindowManager.LayoutParams.TYPE_PHONE,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             android.graphics.PixelFormat.TRANSLUCENT
         )
-        params.gravity = Gravity.TOP or Gravity.END
-        params.x = dpToPx(OVERLAY_MARGIN_DP)
-        params.y = dpToPx(OVERLAY_MARGIN_DP)
+        params.gravity = Gravity.TOP or Gravity.START
+        val storedPosition = currentTrackedPackage?.let { storage.getOverlayPosition(it) }
+        params.x = storedPosition?.first ?: dpToPx(OVERLAY_MARGIN_DP)
+        params.y = storedPosition?.second ?: dpToPx(OVERLAY_MARGIN_DP)
+
+        // Make the timer overlay draggable
+        var initialX = 0
+        var initialY = 0
+        var initialTouchX = 0f
+        var initialTouchY = 0f
+
+        view.setOnTouchListener { _, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    initialX = params.x
+                    initialY = params.y
+                    initialTouchX = event.rawX
+                    initialTouchY = event.rawY
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    params.x = initialX + (event.rawX - initialTouchX).toInt()
+                    params.y = initialY + (event.rawY - initialTouchY).toInt()
+                    windowManager?.updateViewLayout(view, params)
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    persistOverlayPosition(params.x, params.y)
+                    true
+                }
+                else -> false
+            }
+        }
 
         windowManager?.addView(view, params)
         overlayView = view
+        overlayLayoutParams = params
         return view
     }
 
@@ -370,6 +403,7 @@ class AppBlockerService : AccessibilityService() {
         logDebug("overlay", "remove")
         overlayView?.let { windowManager?.removeView(it) }
         overlayView = null
+        overlayLayoutParams = null
         removeDebugOverlay()
     }
 
@@ -460,6 +494,20 @@ class AppBlockerService : AccessibilityService() {
     private fun dpToPx(dp: Int): Int {
         val density = resources.displayMetrics.density
         return (dp * density).toInt()
+    }
+
+    private fun persistOverlayPosition(x: Int, y: Int) {
+        val packageName = currentTrackedPackage ?: return
+        storage.setOverlayPosition(packageName, x, y)
+    }
+
+    private fun applyStoredOverlayPosition(packageName: String) {
+        val position = storage.getOverlayPosition(packageName) ?: return
+        val params = overlayLayoutParams ?: return
+        params.gravity = Gravity.TOP or Gravity.START
+        params.x = position.first
+        params.y = position.second
+        overlayView?.let { windowManager?.updateViewLayout(it, params) }
     }
 
     private fun logDebug(tag: String, message: String) {

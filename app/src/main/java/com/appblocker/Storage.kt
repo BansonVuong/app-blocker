@@ -65,6 +65,9 @@ class Storage(context: Context) {
         private const val KEY_BLOCK_SETS = "block_sets"
         private const val KEY_DEBUG_OVERLAY_ENABLED = "debug_overlay_enabled"
         private const val KEY_DEBUG_LOG_CAPTURE_ENABLED = "debug_log_capture_enabled"
+        private const val KEY_OVERLAY_X_PREFIX = "overlay_x_"
+        private const val KEY_OVERLAY_Y_PREFIX = "overlay_y_"
+        private const val OVERLAY_POS_UNSET = Int.MIN_VALUE
     }
 
     // ===== Debug-only prefs (easy to remove) =====
@@ -116,6 +119,20 @@ class Storage(context: Context) {
 
     fun getBlockSetForApp(packageName: String): BlockSet? {
         return getBlockSets().find { it.apps.contains(packageName) }
+    }
+
+    fun getOverlayPosition(packageName: String): Pair<Int, Int>? {
+        val x = prefs.getInt(KEY_OVERLAY_X_PREFIX + packageName, OVERLAY_POS_UNSET)
+        val y = prefs.getInt(KEY_OVERLAY_Y_PREFIX + packageName, OVERLAY_POS_UNSET)
+        if (x == OVERLAY_POS_UNSET || y == OVERLAY_POS_UNSET) return null
+        return x to y
+    }
+
+    fun setOverlayPosition(packageName: String, x: Int, y: Int) {
+        prefs.edit()
+            .putInt(KEY_OVERLAY_X_PREFIX + packageName, x)
+            .putInt(KEY_OVERLAY_Y_PREFIX + packageName, y)
+            .apply()
     }
 
     // Get usage time from system UsageStats events for apps in a block set
