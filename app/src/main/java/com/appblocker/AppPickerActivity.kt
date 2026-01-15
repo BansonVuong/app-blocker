@@ -78,7 +78,8 @@ class AppPickerActivity : AppCompatActivity() {
                 )
             }
                 .sortedWith(
-                    compareByDescending<AppInfo> { it.usageSecondsLastWeek }
+                    compareByDescending<AppInfo> { preSelectedApps.contains(it.packageName) }
+                        .thenByDescending { it.usageSecondsLastWeek }
                         .thenBy { it.appName.lowercase() }
                 )
 

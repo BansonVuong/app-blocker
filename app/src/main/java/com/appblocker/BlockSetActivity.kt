@@ -34,6 +34,7 @@ class BlockSetActivity : AppCompatActivity() {
             if (apps != null) {
                 selectedApps = apps.toMutableList()
                 updateSelectedAppsText()
+                persistSelectedApps()
             }
         }
     }
@@ -105,6 +106,18 @@ class BlockSetActivity : AppCompatActivity() {
 
     private fun updateSelectedAppsText() {
         binding.textSelectedApps.text = getString(R.string.apps_selected, selectedApps.size)
+    }
+
+    private fun persistSelectedApps() {
+        val existingBlockSet = blockSet ?: return
+        val blockSets = storage.getBlockSets()
+        val index = blockSets.indexOfFirst { it.id == existingBlockSet.id }
+        if (index >= 0) {
+            val updated = existingBlockSet.copy(apps = selectedApps)
+            blockSets[index] = updated
+            storage.saveBlockSets(blockSets)
+            blockSet = updated
+        }
     }
 
     private fun saveBlockSet() {
