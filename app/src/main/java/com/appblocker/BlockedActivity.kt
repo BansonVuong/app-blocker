@@ -2,6 +2,8 @@ package com.appblocker
 
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import com.appblocker.databinding.ActivityBlockedBinding
@@ -13,10 +15,19 @@ class BlockedActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityBlockedBinding
     private lateinit var storage: Storage
+    private val handler = Handler(Looper.getMainLooper())
+    private var blockSetId: String? = null
+    private val updateRunnable = object : Runnable {
+        override fun run() {
+            updateUnblockTime(blockSetId)
+            handler.postDelayed(this, UPDATE_INTERVAL_MS)
+        }
+    }
 
     companion object {
         const val EXTRA_BLOCK_SET_NAME = "block_set_name"
         const val EXTRA_BLOCK_SET_ID = "block_set_id"
+        private const val UPDATE_INTERVAL_MS = 30_000L
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -27,7 +38,7 @@ class BlockedActivity : AppCompatActivity() {
         storage = App.instance.storage
 
         val blockSetName = intent.getStringExtra(EXTRA_BLOCK_SET_NAME) ?: "Unknown"
-        val blockSetId = intent.getStringExtra(EXTRA_BLOCK_SET_ID)
+        blockSetId = intent.getStringExtra(EXTRA_BLOCK_SET_ID)
 
         binding.textMessage.text = getString(R.string.quota_exceeded_message)
         binding.textBlockSetName.text = "\"$blockSetName\""
@@ -42,6 +53,16 @@ class BlockedActivity : AppCompatActivity() {
     override fun onBackPressed() {
         super.onBackPressed()
         goHome()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        handler.post(updateRunnable)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        handler.removeCallbacks(updateRunnable)
     }
 
     private fun goHome() {
@@ -62,11 +83,8 @@ class BlockedActivity : AppCompatActivity() {
             return
         }
 
-        val nowSeconds = System.currentTimeMillis() / 1000
-        val windowSeconds = blockSet.windowMinutes * 60
-        val windowStart = (nowSeconds / windowSeconds) * windowSeconds
-        val unblockAtSeconds = windowStart + windowSeconds
-        val date = Date(unblockAtSeconds * 1000)
+        val unblockAtMillis = storage.getWindowEndMillis(blockSet)
+        val date = Date(unblockAtMillis)
         val formatter = SimpleDateFormat("h:mm a", Locale.getDefault())
         val time = formatter.format(date)
         binding.textUnblockTime.visibility = View.VISIBLE

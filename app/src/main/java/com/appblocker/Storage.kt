@@ -155,6 +155,12 @@ class Storage(context: Context) {
         return computeRemainingSeconds(blockSet.quotaMinutes, usedSeconds)
     }
 
+    fun getWindowEndMillis(blockSet: BlockSet, nowMillis: Long = System.currentTimeMillis()): Long {
+        val windowMs = blockSet.windowMinutes * 60 * 1000L
+        val windowStart = (nowMillis / windowMs) * windowMs
+        return windowStart + windowMs
+    }
+
     fun isQuotaExceeded(blockSet: BlockSet): Boolean {
         return getRemainingSeconds(blockSet) <= 0
     }
