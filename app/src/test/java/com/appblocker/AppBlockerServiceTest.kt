@@ -1,6 +1,7 @@
 package com.appblocker
 
 import android.app.Application
+import android.content.Intent
 import android.view.accessibility.AccessibilityEvent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -512,5 +513,33 @@ class AppBlockerServiceTest {
         assertNotNull(firstRunnable)
         assertNotNull(secondRunnable)
         assertEquals(firstRunnable, secondRunnable)
+    }
+
+    @Test
+    fun screenOffStopsTrackingAndRemovesOverlay() {
+        val blockSet = BlockSet(
+            name = "Social",
+            apps = mutableListOf("com.instagram.android"),
+            quotaMinutes = 30,
+            windowMinutes = 60
+        )
+        storage.saveBlockSets(listOf(blockSet))
+
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        service.onAccessibilityEvent(createWindowStateChangedEvent("com.instagram.android"))
+
+        val trackedBefore = getPrivateField(service, "currentTrackedPackage") as String?
+        assertEquals("com.instagram.android", trackedBefore)
+
+        val intent = Intent(Intent.ACTION_SCREEN_OFF)
+        app.sendBroadcast(intent)
+
+        val trackedAfter = getPrivateField(service, "currentTrackedPackage") as String?
+        val overlayView = getPrivateField(service, "overlayView")
+        val overlayRunnable = getPrivateField(service, "overlayUpdateRunnable")
+
+        assertNull(trackedAfter)
+        assertNull(overlayView)
+        assertNull(overlayRunnable)
     }
 }
