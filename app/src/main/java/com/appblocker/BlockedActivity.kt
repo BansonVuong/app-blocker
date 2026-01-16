@@ -88,6 +88,13 @@ class BlockedActivity : AppCompatActivity() {
             return
         }
 
+        if (!storage.isQuotaExceeded(blockSet)) {
+            finish()
+            return
+        }
+
+        binding.textBlockSetName.text = "\"${blockSet.name}\""
+
         val unblockAtMillis = storage.getWindowEndMillis(blockSet)
         val date = Date(unblockAtMillis)
         val formatter = SimpleDateFormat("h:mm a", Locale.getDefault())

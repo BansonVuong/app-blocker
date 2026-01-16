@@ -40,6 +40,7 @@ class AppBlockerService : AccessibilityService() {
     // Local session tracking to enable immediate blocking when timer runs out
     private var sessionStartTimeMs: Long = 0
     private var initialRemainingSeconds: Int = 0
+    private var currentWindowEndMs: Long = 0
 
     companion object {
         var isRunning = false
@@ -203,6 +204,7 @@ class AppBlockerService : AccessibilityService() {
         // This allows immediate blocking when timer runs out, without waiting for Android's delayed usage stats
         sessionStartTimeMs = System.currentTimeMillis()
         initialRemainingSeconds = storage.getRemainingSeconds(blockSet)
+        currentWindowEndMs = storage.getWindowEndMillis(blockSet, sessionStartTimeMs)
 
         // Update overlay immediately
         updateOverlayWithLocalTracking(blockSet)
@@ -215,6 +217,14 @@ class AppBlockerService : AccessibilityService() {
                     // Re-fetch blockSet to get current state
                     val updatedBlockSet = storage.getBlockSets().find { it.id == bs.id }
                     if (updatedBlockSet != null) {
+                        // Reset local tracking at window boundary so the timer refreshes.
+                        val nowMs = System.currentTimeMillis()
+                        if (currentWindowEndMs > 0 && nowMs >= currentWindowEndMs) {
+                            sessionStartTimeMs = nowMs
+                            initialRemainingSeconds = storage.getRemainingSeconds(updatedBlockSet)
+                            currentWindowEndMs = storage.getWindowEndMillis(updatedBlockSet, nowMs)
+                        }
+
                         // Calculate remaining time using local tracking for immediate response
                         val localRemainingSeconds = getLocalRemainingSeconds()
 
@@ -246,6 +256,7 @@ class AppBlockerService : AccessibilityService() {
         currentBlockSet = null
         sessionStartTimeMs = 0
         initialRemainingSeconds = 0
+        currentWindowEndMs = 0
         logDebug("track", "stop")
         updateOverlay(null)
     }

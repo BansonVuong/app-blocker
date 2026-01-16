@@ -48,6 +48,12 @@ class AppBlockerServiceTest {
         return field.get(service)
     }
 
+    private fun setPrivateField(service: AppBlockerService, fieldName: String, value: Any?) {
+        val field = AppBlockerService::class.java.getDeclaredField(fieldName)
+        field.isAccessible = true
+        field.set(service, value)
+    }
+
     @Test
     fun launchesBlockedScreenWhenQuotaExceeded() {
         val storage = (app as App).storage
@@ -541,5 +547,33 @@ class AppBlockerServiceTest {
         assertNull(trackedAfter)
         assertNull(overlayView)
         assertNull(overlayRunnable)
+    }
+
+    @Test
+    fun resetsLocalTimerAtWindowBoundary() {
+        val blockSet = BlockSet(
+            name = "Focus",
+            apps = mutableListOf("com.example.blocked"),
+            quotaMinutes = 30,
+            windowMinutes = 60
+        )
+        storage.saveBlockSets(listOf(blockSet))
+
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        service.onAccessibilityEvent(createWindowStateChangedEvent("com.example.blocked"))
+
+        val runnable = getPrivateField(service, "overlayUpdateRunnable") as Runnable?
+        assertNotNull(runnable)
+
+        setPrivateField(service, "initialRemainingSeconds", 1)
+        setPrivateField(service, "currentWindowEndMs", System.currentTimeMillis() - 1)
+
+        runnable?.run()
+
+        val refreshedRemaining = getPrivateField(service, "initialRemainingSeconds") as Int
+        val refreshedWindowEnd = getPrivateField(service, "currentWindowEndMs") as Long
+
+        assertEquals(storage.getRemainingSeconds(blockSet), refreshedRemaining)
+        assertTrue(refreshedWindowEnd >= System.currentTimeMillis())
     }
 }
