@@ -8,6 +8,7 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.appblocker.databinding.ActivityBlockSetBinding
+import java.util.Locale
 
 class BlockSetActivity : AppCompatActivity() {
 
@@ -23,7 +24,7 @@ class BlockSetActivity : AppCompatActivity() {
         // Window options in minutes
         val WINDOW_OPTIONS = listOf(5, 10, 15, 20, 30, 60)
         val WINDOW_LABELS = listOf("5 minutes", "10 minutes", "15 minutes", "20 minutes", "30 minutes", "1 hour")
-        private const val DEFAULT_QUOTA_MINUTES = 30
+        private const val DEFAULT_QUOTA_MINUTES = 30.0
     }
 
     private val appPickerLauncher = registerForActivityResult(
@@ -54,7 +55,7 @@ class BlockSetActivity : AppCompatActivity() {
             blockSet?.let {
                 binding.toolbar.title = getString(R.string.edit_block_set)
                 binding.editName.setText(it.name)
-                binding.editQuota.setText(it.quotaMinutes.toString())
+                binding.editQuota.setText(formatQuotaMinutes(it.quotaMinutes))
                 binding.spinnerWindow.setSelection(WINDOW_OPTIONS.indexOf(it.windowMinutes).coerceAtLeast(0))
                 binding.checkCombinedQuota.isChecked = it.combinedQuota
                 selectedApps = it.apps.toMutableList()
@@ -63,7 +64,7 @@ class BlockSetActivity : AppCompatActivity() {
         } else {
             val existingCount = storage.getBlockSets().size
             binding.editName.setText(getString(R.string.default_block_set_name, existingCount + 1))
-            binding.editQuota.setText(DEFAULT_QUOTA_MINUTES.toString())
+            binding.editQuota.setText(formatQuotaMinutes(DEFAULT_QUOTA_MINUTES))
         }
 
         updateSelectedAppsText()
@@ -128,7 +129,8 @@ class BlockSetActivity : AppCompatActivity() {
         }
 
         val quotaText = binding.editQuota.text?.toString()?.trim().orEmpty()
-        val quota = quotaText.toIntOrNull()
+        val normalizedQuotaText = quotaText.replace(',', '.')
+        val quota = normalizedQuotaText.toDoubleOrNull()
         if (quota == null || quota <= 0) {
             Toast.makeText(this, "Please enter a valid quota in minutes", Toast.LENGTH_SHORT).show()
             return
@@ -175,5 +177,14 @@ class BlockSetActivity : AppCompatActivity() {
             storage.saveBlockSets(blockSets)
         }
         finish()
+    }
+
+    private fun formatQuotaMinutes(minutes: Double): String {
+        return if (minutes % 1.0 == 0.0) {
+            minutes.toInt().toString()
+        } else {
+            val formatted = String.format(Locale.US, "%.2f", minutes)
+            formatted.trimEnd('0').trimEnd('.')
+        }
     }
 }

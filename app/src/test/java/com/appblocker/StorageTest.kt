@@ -31,13 +31,13 @@ class StorageTest {
             BlockSet(
                 name = "Social",
                 apps = mutableListOf("com.example.a"),
-                quotaMinutes = 10,
+                quotaMinutes = 10.0,
                 windowMinutes = 60
             ),
             BlockSet(
                 name = "Games",
                 apps = mutableListOf("com.example.b"),
-                quotaMinutes = 5,
+                quotaMinutes = 5.0,
                 windowMinutes = 30
             )
         )
@@ -57,7 +57,7 @@ class StorageTest {
             BlockSet(
                 name = "Social",
                 apps = mutableListOf("com.example.a"),
-                quotaMinutes = 10,
+                quotaMinutes = 10.0,
                 windowMinutes = 60
             )
         )

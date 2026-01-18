@@ -4,6 +4,7 @@ import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
 import com.appblocker.databinding.ItemBlockSetBinding
+import kotlin.math.roundToInt
 
 class BlockSetAdapter(
     private val onItemClick: (BlockSet) -> Unit
@@ -43,7 +44,7 @@ class BlockSetAdapter(
             binding.textApps.text = binding.root.context.getString(R.string.apps_selected, appCount)
 
             val remainingSeconds = storage.getRemainingSeconds(blockSet)
-            val totalSeconds = blockSet.quotaMinutes * 60
+            val totalSeconds = (blockSet.quotaMinutes * 60).roundToInt()
             val usedSeconds = totalSeconds - remainingSeconds
             val progress = if (totalSeconds > 0) (usedSeconds * 100) / totalSeconds else 0
 

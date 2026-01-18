@@ -10,7 +10,7 @@ class UsageCalculatorTest {
         val blockSet = BlockSet(
             name = "Social",
             apps = mutableListOf("com.example.a", "com.example.b"),
-            quotaMinutes = 10,
+            quotaMinutes = 10.0,
             windowMinutes = 60
         )
         val now = 8_000L
@@ -31,7 +31,7 @@ class UsageCalculatorTest {
         val blockSet = BlockSet(
             name = "Games",
             apps = mutableListOf("com.example.game"),
-            quotaMinutes = 10,
+            quotaMinutes = 10.0,
             windowMinutes = 60
         )
         val now = 5_000L
@@ -52,7 +52,7 @@ class UsageCalculatorTest {
         val blockSet = BlockSet(
             name = "Work",
             apps = mutableListOf("com.example.work"),
-            quotaMinutes = 10,
+            quotaMinutes = 10.0,
             windowMinutes = 60
         )
         val now = 10_000L
@@ -70,7 +70,7 @@ class UsageCalculatorTest {
         val blockSet = BlockSet(
             name = "Media",
             apps = mutableListOf("com.example.media"),
-            quotaMinutes = 10,
+            quotaMinutes = 10.0,
             windowMinutes = 60
         )
         val now = 5_000L
@@ -88,7 +88,7 @@ class UsageCalculatorTest {
         val blockSet = BlockSet(
             name = "Mixed",
             apps = mutableListOf("com.example.a", "com.example.b"),
-            quotaMinutes = 10,
+            quotaMinutes = 10.0,
             windowMinutes = 60
         )
         val now = 10_000L
@@ -109,7 +109,7 @@ class UsageCalculatorTest {
         val blockSet = BlockSet(
             name = "Focus",
             apps = mutableListOf("com.example.focus"),
-            quotaMinutes = 10,
+            quotaMinutes = 10.0,
             windowMinutes = 5
         )
         val windowStart = 5_000L
@@ -128,7 +128,7 @@ class UsageCalculatorTest {
         val blockSet = BlockSet(
             name = "Study",
             apps = mutableListOf("com.example.study"),
-            quotaMinutes = 10,
+            quotaMinutes = 10.0,
             windowMinutes = 5
         )
         val windowStart = 4_000L
@@ -145,11 +145,11 @@ class UsageCalculatorTest {
 
     @Test
     fun computeRemainingSecondsClampsAtZero() {
-        assertEquals(0, computeRemainingSeconds(quotaMinutes = 1, usedSeconds = 61))
+        assertEquals(0, computeRemainingSeconds(quotaMinutes = 1.0, usedSeconds = 61))
     }
 
     @Test
     fun computeRemainingSecondsReturnsPositiveValue() {
-        assertEquals(90, computeRemainingSeconds(quotaMinutes = 2, usedSeconds = 30))
+        assertEquals(90, computeRemainingSeconds(quotaMinutes = 2.0, usedSeconds = 30))
     }
 }

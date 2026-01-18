@@ -60,7 +60,7 @@ class AppBlockerServiceTest {
         val blockSet = BlockSet(
             name = "Focus",
             apps = mutableListOf("com.example.blocked"),
-            quotaMinutes = 0,
+            quotaMinutes = 0.0,
             windowMinutes = 60
         )
         storage.saveBlockSets(listOf(blockSet))
@@ -85,7 +85,7 @@ class AppBlockerServiceTest {
         val blockSet = BlockSet(
             name = "Focus",
             apps = mutableListOf("com.example.blocked"),
-            quotaMinutes = 0,
+            quotaMinutes = 0.0,
             windowMinutes = 60
         )
         storage.saveBlockSets(listOf(blockSet))
@@ -110,7 +110,7 @@ class AppBlockerServiceTest {
         val blockSet = BlockSet(
             name = "Social",
             apps = mutableListOf("com.instagram.android"),
-            quotaMinutes = 30,
+            quotaMinutes = 30.0,
             windowMinutes = 60
         )
         storage.saveBlockSets(listOf(blockSet))
@@ -131,7 +131,7 @@ class AppBlockerServiceTest {
         val blockSet = BlockSet(
             name = "Social",
             apps = mutableListOf("com.instagram.android"),
-            quotaMinutes = 30,
+            quotaMinutes = 30.0,
             windowMinutes = 60
         )
         storage.saveBlockSets(listOf(blockSet))
@@ -156,7 +156,7 @@ class AppBlockerServiceTest {
         val blockSet = BlockSet(
             name = "Social",
             apps = mutableListOf("com.instagram.android"),
-            quotaMinutes = 30,
+            quotaMinutes = 30.0,
             windowMinutes = 60
         )
         storage.saveBlockSets(listOf(blockSet))
@@ -180,7 +180,7 @@ class AppBlockerServiceTest {
         val blockSet = BlockSet(
             name = "Social",
             apps = mutableListOf("com.instagram.android"),
-            quotaMinutes = 30,
+            quotaMinutes = 30.0,
             windowMinutes = 60
         )
         storage.saveBlockSets(listOf(blockSet))
@@ -204,7 +204,7 @@ class AppBlockerServiceTest {
         val blockSet = BlockSet(
             name = "Social",
             apps = mutableListOf("com.instagram.android"),
-            quotaMinutes = 30,
+            quotaMinutes = 30.0,
             windowMinutes = 60
         )
         storage.saveBlockSets(listOf(blockSet))
@@ -228,7 +228,7 @@ class AppBlockerServiceTest {
         val blockSet = BlockSet(
             name = "Social",
             apps = mutableListOf("com.instagram.android"),
-            quotaMinutes = 30,
+            quotaMinutes = 30.0,
             windowMinutes = 60
         )
         storage.saveBlockSets(listOf(blockSet))
@@ -252,7 +252,7 @@ class AppBlockerServiceTest {
         val blockSet = BlockSet(
             name = "Social",
             apps = mutableListOf("com.instagram.android"),
-            quotaMinutes = 30,
+            quotaMinutes = 30.0,
             windowMinutes = 60
         )
         storage.saveBlockSets(listOf(blockSet))
@@ -276,7 +276,7 @@ class AppBlockerServiceTest {
         val blockSet = BlockSet(
             name = "Social",
             apps = mutableListOf("com.instagram.android"),
-            quotaMinutes = 30,
+            quotaMinutes = 30.0,
             windowMinutes = 60
         )
         storage.saveBlockSets(listOf(blockSet))
@@ -299,7 +299,7 @@ class AppBlockerServiceTest {
         val blockSet = BlockSet(
             name = "Social",
             apps = mutableListOf("com.instagram.android"),
-            quotaMinutes = 30,
+            quotaMinutes = 30.0,
             windowMinutes = 60
         )
         storage.saveBlockSets(listOf(blockSet))
@@ -330,13 +330,13 @@ class AppBlockerServiceTest {
             BlockSet(
                 name = "Social",
                 apps = mutableListOf("com.instagram.android"),
-                quotaMinutes = 30,
+                quotaMinutes = 30.0,
                 windowMinutes = 60
             ),
             BlockSet(
                 name = "Video",
                 apps = mutableListOf("com.tiktok.android"),
-                quotaMinutes = 15,
+                quotaMinutes = 15.0,
                 windowMinutes = 60
             )
         )
@@ -366,7 +366,7 @@ class AppBlockerServiceTest {
         val blockSet = BlockSet(
             name = "Social",
             apps = mutableListOf("com.instagram.android"),
-            quotaMinutes = 30,
+            quotaMinutes = 30.0,
             windowMinutes = 60
         )
         storage.saveBlockSets(listOf(blockSet))
@@ -391,13 +391,13 @@ class AppBlockerServiceTest {
             BlockSet(
                 name = "Social",
                 apps = mutableListOf("com.instagram.android"),
-                quotaMinutes = 30,
+                quotaMinutes = 30.0,
                 windowMinutes = 60
             ),
             BlockSet(
                 name = "Video",
                 apps = mutableListOf("com.tiktok.android"),
-                quotaMinutes = 15,
+                quotaMinutes = 15.0,
                 windowMinutes = 60
             )
         )
@@ -425,7 +425,7 @@ class AppBlockerServiceTest {
         val blockSet = BlockSet(
             name = "Social",
             apps = mutableListOf("com.instagram.android"),
-            quotaMinutes = 30,
+            quotaMinutes = 30.0,
             windowMinutes = 60
         )
         storage.saveBlockSets(listOf(blockSet))
@@ -451,7 +451,7 @@ class AppBlockerServiceTest {
         val blockSet = BlockSet(
             name = "Social",
             apps = mutableListOf("com.instagram.android"),
-            quotaMinutes = 30,
+            quotaMinutes = 30.0,
             windowMinutes = 60
         )
         storage.saveBlockSets(listOf(blockSet))
@@ -476,7 +476,7 @@ class AppBlockerServiceTest {
         val blockSet = BlockSet(
             name = "Social",
             apps = mutableListOf("com.instagram.android"),
-            quotaMinutes = 30,
+            quotaMinutes = 30.0,
             windowMinutes = 60
         )
         storage.saveBlockSets(listOf(blockSet))
@@ -501,7 +501,7 @@ class AppBlockerServiceTest {
         val blockSet = BlockSet(
             name = "Social",
             apps = mutableListOf("com.instagram.android"),
-            quotaMinutes = 30,
+            quotaMinutes = 30.0,
             windowMinutes = 60
         )
         storage.saveBlockSets(listOf(blockSet))
@@ -526,7 +526,7 @@ class AppBlockerServiceTest {
         val blockSet = BlockSet(
             name = "Social",
             apps = mutableListOf("com.instagram.android"),
-            quotaMinutes = 30,
+            quotaMinutes = 30.0,
             windowMinutes = 60
         )
         storage.saveBlockSets(listOf(blockSet))
@@ -554,7 +554,7 @@ class AppBlockerServiceTest {
         val blockSet = BlockSet(
             name = "Focus",
             apps = mutableListOf("com.example.blocked"),
-            quotaMinutes = 30,
+            quotaMinutes = 30.0,
             windowMinutes = 60
         )
         storage.saveBlockSets(listOf(blockSet))

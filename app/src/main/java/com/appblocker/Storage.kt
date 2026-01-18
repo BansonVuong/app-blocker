@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import kotlin.math.roundToInt
 
 internal data class SimpleUsageEvent(
     val packageName: String,
@@ -51,8 +52,8 @@ internal fun computeUsageSeconds(
     return (totalMs / 1000).toInt()
 }
 
-internal fun computeRemainingSeconds(quotaMinutes: Int, usedSeconds: Int): Int {
-    val quotaSeconds = quotaMinutes * 60
+internal fun computeRemainingSeconds(quotaMinutes: Double, usedSeconds: Int): Int {
+    val quotaSeconds = (quotaMinutes * 60).roundToInt()
     return maxOf(0, quotaSeconds - usedSeconds)
 }
 
@@ -159,12 +160,12 @@ class Storage(context: Context) {
         return computeUsageSeconds(blockSet, simplifiedEvents, now, windowStart)
     }
 
-    fun getUsageMinutesInWindow(blockSet: BlockSet): Int {
-        return getUsageSecondsInWindow(blockSet) / 60
+    fun getUsageMinutesInWindow(blockSet: BlockSet): Double {
+        return getUsageSecondsInWindow(blockSet) / 60.0
     }
 
-    fun getRemainingMinutes(blockSet: BlockSet): Int {
-        return getRemainingSeconds(blockSet) / 60
+    fun getRemainingMinutes(blockSet: BlockSet): Double {
+        return getRemainingSeconds(blockSet) / 60.0
     }
 
     fun getRemainingSeconds(blockSet: BlockSet): Int {
