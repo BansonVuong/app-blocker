@@ -15,6 +15,8 @@
     <string name="no_block_sets">No block sets configured.\nTap + to add one.</string>
     <string name="apps_selected">%d apps selected</string>
     <string name="time_remaining">%d min remaining</string>
+    <string name="time_left">%d:%02d left</string>
+    <string name="time_used">Time used: %s</string>
     <string name="quota_exceeded">Quota Exceeded</string>
     <string name="quota_exceeded_message">You\'ve used your time limit for this block set. Wait for your usage to expire.</string>
     <string name="unblocked_at">Unblocked at %s</string>
@@ -32,4 +34,15 @@
     <string name="export_logs_saved_downloads">Saved logs to Downloads: %1$s</string>
     <string name="export_logs_saved_app_dir">Saved logs to app files: %1$s</string>
     <string name="export_logs_missing">No debug logs yet. Enable Debug overlay and try again.</string>
+    <string name="enter_block_set_name">Please enter a name</string>
+    <string name="enter_quota_minutes">Please enter a valid quota in minutes</string>
+
+    <string-array name="window_labels">
+        <item>5 minutes</item>
+        <item>10 minutes</item>
+        <item>15 minutes</item>
+        <item>20 minutes</item>
+        <item>30 minutes</item>
+        <item>1 hour</item>
+    </string-array>
 </resources>

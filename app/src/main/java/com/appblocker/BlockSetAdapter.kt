@@ -53,7 +53,11 @@ class BlockSetAdapter(
             // Format as MM:SS
             val minutes = remainingSeconds / 60
             val seconds = remainingSeconds % 60
-            binding.textRemaining.text = String.format("%d:%02d left", minutes, seconds)
+            binding.textRemaining.text = binding.root.context.getString(
+                R.string.time_left,
+                minutes,
+                seconds
+            )
 
             // Color based on remaining time (in seconds)
             val color = when {

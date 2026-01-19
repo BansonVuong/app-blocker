@@ -23,7 +23,6 @@ class BlockSetActivity : AppCompatActivity() {
 
         // Window options in minutes
         val WINDOW_OPTIONS = listOf(5, 10, 15, 20, 30, 60)
-        val WINDOW_LABELS = listOf("5 minutes", "10 minutes", "15 minutes", "20 minutes", "30 minutes", "1 hour")
         private const val DEFAULT_QUOTA_MINUTES = 30.0
     }
 
@@ -72,7 +71,8 @@ class BlockSetActivity : AppCompatActivity() {
     }
 
     private fun setupSpinners() {
-        val windowAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, WINDOW_LABELS)
+        val windowLabels = resources.getStringArray(R.array.window_labels)
+        val windowAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, windowLabels.toList())
         windowAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         binding.spinnerWindow.adapter = windowAdapter
         binding.spinnerWindow.setSelection(5) // Default to 1 hour
@@ -124,7 +124,7 @@ class BlockSetActivity : AppCompatActivity() {
     private fun saveBlockSet() {
         val name = binding.editName.text.toString().trim()
         if (name.isEmpty()) {
-            Toast.makeText(this, "Please enter a name", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.enter_block_set_name), Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -132,7 +132,7 @@ class BlockSetActivity : AppCompatActivity() {
         val normalizedQuotaText = quotaText.replace(',', '.')
         val quota = normalizedQuotaText.toDoubleOrNull()
         if (quota == null || quota <= 0) {
-            Toast.makeText(this, "Please enter a valid quota in minutes", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.enter_quota_minutes), Toast.LENGTH_SHORT).show()
             return
         }
 

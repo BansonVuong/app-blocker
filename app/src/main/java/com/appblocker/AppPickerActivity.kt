@@ -1,7 +1,6 @@
 package com.appblocker
 
 import android.content.Intent
-import android.content.pm.ApplicationInfo
 import android.os.Bundle
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
@@ -84,6 +83,7 @@ class AppPickerActivity : AppCompatActivity() {
                 )
 
             runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 adapter.setApps(apps)
                 binding.progressBar.visibility = View.GONE
                 binding.recyclerApps.visibility = View.VISIBLE

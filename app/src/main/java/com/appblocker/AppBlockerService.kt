@@ -46,6 +46,8 @@ class AppBlockerService : AccessibilityService() {
         var isRunning = false
             private set
         private const val OVERLAY_UPDATE_INTERVAL_MS = 1000L // Update overlay every second
+        private const val PENDING_STOP_DELAY_MS = 1000L
+        private const val RECENT_BLOCKED_EVENT_THRESHOLD_MS = 1500L
         private const val OVERLAY_MARGIN_DP = 12
         private const val LOG_TAG = "AppBlockerOverlay"
     }
@@ -113,6 +115,7 @@ class AppBlockerService : AccessibilityService() {
 
         val packageName = event.packageName?.toString() ?: return
         val className = event.className?.toString()
+        val nowMs = System.currentTimeMillis()
         logDebug("event", buildEventLogMessage(packageName, className))
 
         // Update or remove debug overlay based on current setting.
@@ -135,120 +138,115 @@ class AppBlockerService : AccessibilityService() {
 
         // blockSet already looked up above for debug overlay
         if (blockSet != null) {
-            // Only check for in-app browser if this is NOT a standalone browser app.
-            // This ensures Chrome, Firefox, etc. work normally when blocked.
-            if (!isBrowserPackage(packageName) && isInAppBrowserClass(className)) {
-                // In-app browser detected from a non-browser app (e.g., Instagram opening Chrome Custom Tab)
-                // Check if the associated browser is blocked - if so, track against it
-                val browserPackage = getBrowserPackageForInAppBrowser(className ?: "")
-                val browserBlockSet = browserPackage?.let { storage.getBlockSetForApp(it) }
-
-                if (browserBlockSet != null) {
-                    logDebug("track", "in-app browser from $packageName tracking against browser $browserPackage")
-                    lastBlockedEventTimeMs = System.currentTimeMillis()
-                    cancelPendingStop()
-
-                    if (storage.isQuotaExceeded(browserBlockSet)) {
-                        logDebug("blocked", "quota exceeded for browser ${browserBlockSet.name}")
-                        launchBlockedScreen(browserBlockSet.name, browserBlockSet.id)
-                        stopTracking()
-                        return
-                    }
-
-                    if (currentTrackedPackage != browserPackage) {
-                        logDebug("track", "switch to browser $browserPackage for in-app browser")
-                        stopTracking()
-                        startTracking(browserPackage, browserBlockSet)
-                    }
-                    updateOverlayWithLocalTracking(browserBlockSet)
-                    return
-                } else {
-                    // Browser is not blocked, so don't show overlay for in-app browser
-                    logDebug("track", "in-app browser detected but browser not blocked, stopping")
-                    stopTracking()
-                    return
-                }
-            }
-            lastBlockedEventTimeMs = System.currentTimeMillis()
-            cancelPendingStop()
-            // Check if quota is exceeded
-            if (storage.isQuotaExceeded(blockSet)) {
-                logDebug("blocked", "quota exceeded for ${blockSet.name}")
-                launchBlockedScreen(blockSet.name, blockSet.id)
-                stopTracking()
-                return
-            }
-
-            // Start or continue tracking for overlay updates
-            if (currentTrackedPackage != packageName) {
-                logDebug("track", "switch to blocked $packageName")
-                stopTracking()
-                startTracking(packageName, blockSet)
-            }
-            // Always update overlay when in a blocked app (like debug overlay does)
-            // This ensures overlay stays visible even if system events occur
-            updateOverlayWithLocalTracking(blockSet)
-        } else if (packageName == this.packageName) {
-            val now = System.currentTimeMillis()
-            val recentlyInBlockedApp = currentTrackedPackage != null &&
-                (now - lastBlockedEventTimeMs) < 1500
-            val isAppBlockerActivity = className?.startsWith(this.packageName) == true
-            if (currentTrackedPackage != null && !isAppBlockerActivity) {
-                logDebug("track", "ignore appblocker non-activity event during blocked app")
-                return
-            }
-            if (recentlyInBlockedApp && !isAppBlockerActivity) {
-                logDebug("track", "ignore appblocker event during blocked app")
-                return
-            }
-            if (currentTrackedPackage != null) {
-                logDebug("track", "schedule stop due to appblocker event while tracking")
-                scheduleStopTracking()
-            } else {
-                logDebug("track", "stop due to appblocker event")
-                stopTracking()
-            }
-        } else {
-            // App not in any block set
-            // Check if this is an in-app browser for a blocked browser
-            if (!isBrowserPackage(packageName) && isInAppBrowserClass(className)) {
-                val browserPackage = getBrowserPackageForInAppBrowser(className ?: "")
-                val browserBlockSet = browserPackage?.let { storage.getBlockSetForApp(it) }
-
-                if (browserBlockSet != null) {
-                    logDebug("track", "in-app browser from unblocked $packageName tracking against browser $browserPackage")
-                    lastBlockedEventTimeMs = System.currentTimeMillis()
-                    cancelPendingStop()
-
-                    if (storage.isQuotaExceeded(browserBlockSet)) {
-                        logDebug("blocked", "quota exceeded for browser ${browserBlockSet.name}")
-                        launchBlockedScreen(browserBlockSet.name, browserBlockSet.id)
-                        stopTracking()
-                        return
-                    }
-
-                    if (currentTrackedPackage != browserPackage) {
-                        logDebug("track", "switch to browser $browserPackage for in-app browser")
-                        stopTracking()
-                        startTracking(browserPackage, browserBlockSet)
-                    }
-                    updateOverlayWithLocalTracking(browserBlockSet)
-                    return
-                }
-                // Browser not blocked - fall through to normal unblocked app handling
-            }
-
-            // Only stop tracking if this looks like a real app switch (not a system overlay/dialog)
-            // System overlays, keyboards, etc. often have short package names or system prefixes
-            val isLikelyOverlay = isLikelyOverlayPackage(packageName)
-
-            if (!isLikelyOverlay) {
-                // This is a real app that's not blocked - stop tracking
-                logDebug("track", "schedule stop due to $packageName (likelyOverlay=$isLikelyOverlay)")
-                scheduleStopTracking()
-            }
-            // If it's likely an overlay, just ignore it and keep tracking
+            if (handleInAppBrowser(packageName, className, stopWhenBrowserNotBlocked = true, nowMs)) return
+            handleBlockedApp(packageName, blockSet, nowMs)
+            return
         }
+
+        if (packageName == this.packageName) {
+            handleAppBlockerPackageEvent(className, nowMs)
+            return
+        }
+
+        if (handleInAppBrowser(packageName, className, stopWhenBrowserNotBlocked = false, nowMs)) return
+        handleUnblockedAppSwitch(packageName)
+    }
+
+    private fun handleBlockedApp(packageName: String, blockSet: BlockSet, nowMs: Long) {
+        lastBlockedEventTimeMs = nowMs
+        cancelPendingStop()
+        if (storage.isQuotaExceeded(blockSet)) {
+            logDebug("blocked", "quota exceeded for ${blockSet.name}")
+            launchBlockedScreen(blockSet.name, blockSet.id)
+            stopTracking()
+            return
+        }
+
+        if (currentTrackedPackage != packageName) {
+            logDebug("track", "switch to blocked $packageName")
+            stopTracking()
+            startTracking(packageName, blockSet)
+        }
+        // Always update overlay when in a blocked app (like debug overlay does)
+        // This ensures overlay stays visible even if system events occur
+        updateOverlayWithLocalTracking(blockSet)
+    }
+
+    private fun handleAppBlockerPackageEvent(className: String?, nowMs: Long) {
+        val recentlyInBlockedApp = currentTrackedPackage != null &&
+            (nowMs - lastBlockedEventTimeMs) < RECENT_BLOCKED_EVENT_THRESHOLD_MS
+        val isAppBlockerActivity = className?.startsWith(this.packageName) == true
+        if (currentTrackedPackage != null && !isAppBlockerActivity) {
+            logDebug("track", "ignore appblocker non-activity event during blocked app")
+            return
+        }
+        if (recentlyInBlockedApp && !isAppBlockerActivity) {
+            logDebug("track", "ignore appblocker event during blocked app")
+            return
+        }
+        if (currentTrackedPackage != null) {
+            logDebug("track", "schedule stop due to appblocker event while tracking")
+            scheduleStopTracking()
+        } else {
+            logDebug("track", "stop due to appblocker event")
+            stopTracking()
+        }
+    }
+
+    private fun handleUnblockedAppSwitch(packageName: String) {
+        // Only stop tracking if this looks like a real app switch (not a system overlay/dialog)
+        // System overlays, keyboards, etc. often have short package names or system prefixes
+        val isLikelyOverlay = isLikelyOverlayPackage(packageName)
+
+        if (!isLikelyOverlay) {
+            // This is a real app that's not blocked - stop tracking
+            logDebug("track", "schedule stop due to $packageName (likelyOverlay=$isLikelyOverlay)")
+            scheduleStopTracking()
+        }
+        // If it's likely an overlay, just ignore it and keep tracking
+    }
+
+    private fun handleInAppBrowser(
+        packageName: String,
+        className: String?,
+        stopWhenBrowserNotBlocked: Boolean,
+        nowMs: Long
+    ): Boolean {
+        if (isBrowserPackage(packageName) || !isInAppBrowserClass(className)) return false
+
+        // In-app browser detected from a non-browser app (e.g., Instagram opening Chrome Custom Tab)
+        // Check if the associated browser is blocked - if so, track against it
+        val browserPackage = getBrowserPackageForInAppBrowser(className ?: "")
+        val browserBlockSet = browserPackage?.let { storage.getBlockSetForApp(it) }
+
+        if (browserBlockSet == null) {
+            if (stopWhenBrowserNotBlocked) {
+                // Browser is not blocked, so don't show overlay for in-app browser
+                logDebug("track", "in-app browser detected but browser not blocked, stopping")
+                stopTracking()
+                return true
+            }
+            return false
+        }
+
+        logDebug("track", "in-app browser from $packageName tracking against browser $browserPackage")
+        lastBlockedEventTimeMs = nowMs
+        cancelPendingStop()
+
+        if (storage.isQuotaExceeded(browserBlockSet)) {
+            logDebug("blocked", "quota exceeded for browser ${browserBlockSet.name}")
+            launchBlockedScreen(browserBlockSet.name, browserBlockSet.id)
+            stopTracking()
+            return true
+        }
+
+        if (currentTrackedPackage != browserPackage) {
+            logDebug("track", "switch to browser $browserPackage for in-app browser")
+            stopTracking()
+            startTracking(browserPackage, browserBlockSet)
+        }
+        updateOverlayWithLocalTracking(browserBlockSet)
+        return true
     }
 
     private fun startTracking(packageName: String, blockSet: BlockSet) {
@@ -329,7 +327,7 @@ class AppBlockerService : AccessibilityService() {
             logDebug("track", "stop runnable fired")
             stopTracking()
         }
-        handler.postDelayed(pendingStopRunnable!!, 1000L)
+        handler.postDelayed(pendingStopRunnable!!, PENDING_STOP_DELAY_MS)
     }
 
     private fun cancelPendingStop() {
@@ -363,7 +361,7 @@ class AppBlockerService : AccessibilityService() {
         if (blockSet == null) {
             if (!storage.isDebugOverlayEnabled()) {
                 logDebug("overlay", "remove (no blockSet)")
-                overlayView?.let { windowManager?.removeView(it) }
+                removeViewSafely(overlayView)
                 overlayView = null
                 return
             }
@@ -466,7 +464,7 @@ class AppBlockerService : AccessibilityService() {
 
     private fun removeOverlay() {
         logDebug("overlay", "remove")
-        overlayView?.let { windowManager?.removeView(it) }
+        removeViewSafely(overlayView)
         overlayView = null
         overlayLayoutParams = null
         removeDebugOverlay()
@@ -474,7 +472,7 @@ class AppBlockerService : AccessibilityService() {
 
     private fun removeDebugOverlay() {
         logDebug("debug", "remove")
-        debugOverlayView?.let { windowManager?.removeView(it) }
+        removeViewSafely(debugOverlayView)
         debugOverlayView = null
     }
 
@@ -550,7 +548,7 @@ class AppBlockerService : AccessibilityService() {
     private fun formatRemainingTime(remainingSeconds: Int): String {
         val minutes = remainingSeconds / 60
         val seconds = remainingSeconds % 60
-        return String.format("%d:%02d left", minutes, seconds)
+        return getString(R.string.time_left, minutes, seconds)
     }
 
     private fun dpToPx(dp: Int): Int {
@@ -570,6 +568,17 @@ class AppBlockerService : AccessibilityService() {
         params.x = position.first
         params.y = position.second
         overlayView?.let { windowManager?.updateViewLayout(it, params) }
+    }
+
+    private fun removeViewSafely(view: TextView?) {
+        if (view == null) return
+        try {
+            if (view.isAttachedToWindow) {
+                windowManager?.removeView(view)
+            }
+        } catch (_: IllegalArgumentException) {
+            // View already removed or not attached.
+        }
     }
 
     private fun logDebug(tag: String, message: String) {
