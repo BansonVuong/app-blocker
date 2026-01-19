@@ -36,6 +36,8 @@ class AppBlockerService : AccessibilityService() {
     private var lastBlockedEventTimeMs: Long = 0
     private var screenStateReceiver: BroadcastReceiver? = null
     private var isScreenOff: Boolean = false
+    private var lastSnapchatDetectionMs: Long = 0
+    private var lastSnapchatTab: SnapchatTab = SnapchatTab.UNKNOWN
 
     // Local session tracking to enable immediate blocking when timer runs out
     private var sessionStartTimeMs: Long = 0
@@ -49,6 +51,8 @@ class AppBlockerService : AccessibilityService() {
         private const val PENDING_STOP_DELAY_MS = 1000L
         private const val RECENT_BLOCKED_EVENT_THRESHOLD_MS = 1500L
         private const val OVERLAY_MARGIN_DP = 12
+        private const val SNAPCHAT_DETECTION_INTERVAL_MS = 400L
+        private const val SNAPCHAT_HEADER_MAX_Y_DP = 260
         private const val LOG_TAG = "AppBlockerOverlay"
     }
 
@@ -111,18 +115,26 @@ class AppBlockerService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        if (event == null) return
+        if (!shouldHandleAccessibilityEvent(event.eventType)) return
 
         val packageName = event.packageName?.toString() ?: return
         val className = event.className?.toString()
         val nowMs = System.currentTimeMillis()
+
+        val effectivePackageName = resolveEffectivePackageName(
+            packageName = packageName,
+            className = className,
+            eventType = event.eventType,
+            nowMs = nowMs
+        )
         logDebug("event", buildEventLogMessage(packageName, className))
 
         // Update or remove debug overlay based on current setting.
-        val blockSet = storage.getBlockSetForApp(packageName)
+        val blockSet = storage.getBlockSetForApp(effectivePackageName)
         val isBlocked = blockSet != null
         logDebug("event", "isBlocked=$isBlocked debug=${storage.isDebugOverlayEnabled()}")
-        handleDebugOverlay(packageName, isBlocked)
+        handleDebugOverlay(effectivePackageName, isBlocked)
 
         // Ignore system UI
         if (packageName == "com.android.systemui") {
@@ -139,7 +151,7 @@ class AppBlockerService : AccessibilityService() {
         // blockSet already looked up above for debug overlay
         if (blockSet != null) {
             if (handleInAppBrowser(packageName, className, stopWhenBrowserNotBlocked = true, nowMs)) return
-            handleBlockedApp(packageName, blockSet, nowMs)
+            handleBlockedApp(effectivePackageName, blockSet, nowMs)
             return
         }
 
@@ -258,6 +270,9 @@ class AppBlockerService : AccessibilityService() {
         // Capture initial state for local time tracking
         // This allows immediate blocking when timer runs out, without waiting for Android's delayed usage stats
         sessionStartTimeMs = System.currentTimeMillis()
+        if (AppTargets.isVirtualPackage(packageName)) {
+            storage.startVirtualSession(packageName, sessionStartTimeMs)
+        }
         initialRemainingSeconds = storage.getRemainingSeconds(blockSet)
         currentWindowEndMs = storage.getWindowEndMillis(blockSet, sessionStartTimeMs)
 
@@ -274,6 +289,9 @@ class AppBlockerService : AccessibilityService() {
                     if (updatedBlockSet != null) {
                         // Reset local tracking at window boundary so the timer refreshes.
                         val nowMs = System.currentTimeMillis()
+                        if (AppTargets.isVirtualPackage(currentTrackedPackage ?: "")) {
+                            storage.updateVirtualSessionHeartbeat(currentTrackedPackage!!, nowMs)
+                        }
                         if (currentWindowEndMs > 0 && nowMs >= currentWindowEndMs) {
                             sessionStartTimeMs = nowMs
                             initialRemainingSeconds = storage.getRemainingSeconds(updatedBlockSet)
@@ -307,6 +325,11 @@ class AppBlockerService : AccessibilityService() {
         cancelPendingStop()
         overlayUpdateRunnable?.let { handler.removeCallbacks(it) }
         overlayUpdateRunnable = null
+        currentTrackedPackage?.let { tracked ->
+            if (AppTargets.isVirtualPackage(tracked)) {
+                storage.endVirtualSession(tracked)
+            }
+        }
         currentTrackedPackage = null
         currentBlockSet = null
         sessionStartTimeMs = 0
@@ -603,6 +626,107 @@ class AppBlockerService : AccessibilityService() {
         val safeClassName = className ?: "null"
         return "pkg=$packageName class=$safeClassName tracked=$currentTrackedPackage " +
             "pendingStop=${pendingStopRunnable != null}"
+    }
+
+    private fun shouldHandleAccessibilityEvent(eventType: Int): Boolean {
+        return eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+            eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ||
+            eventType == AccessibilityEvent.TYPE_VIEW_CLICKED ||
+            eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED
+    }
+
+    private fun resolveEffectivePackageName(
+        packageName: String,
+        className: String?,
+        eventType: Int,
+        nowMs: Long
+    ): String {
+        if (packageName != AppTargets.SNAPCHAT_PACKAGE) return packageName
+        if (storage.getBlockSetForApp(AppTargets.SNAPCHAT_PACKAGE) != null) {
+            return AppTargets.SNAPCHAT_PACKAGE
+        }
+        val hasStoriesBlock = storage.getBlockSetForApp(AppTargets.SNAPCHAT_STORIES) != null
+        val hasSpotlightBlock = storage.getBlockSetForApp(AppTargets.SNAPCHAT_SPOTLIGHT) != null
+        if (!hasStoriesBlock && !hasSpotlightBlock) {
+            return AppTargets.SNAPCHAT_PACKAGE
+        }
+
+        val tab = detectSnapchatTab(eventType, nowMs)
+        return when (tab) {
+            SnapchatTab.STORIES ->
+                if (hasStoriesBlock) AppTargets.SNAPCHAT_STORIES else AppTargets.SNAPCHAT_PACKAGE
+            SnapchatTab.SPOTLIGHT ->
+                if (hasSpotlightBlock) AppTargets.SNAPCHAT_SPOTLIGHT else AppTargets.SNAPCHAT_PACKAGE
+            else -> AppTargets.SNAPCHAT_PACKAGE
+        }
+    }
+
+    private fun detectSnapchatTab(eventType: Int, nowMs: Long): SnapchatTab {
+        val shouldUpdate = eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+            eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ||
+            eventType == AccessibilityEvent.TYPE_VIEW_CLICKED
+        if (!shouldUpdate) return lastSnapchatTab
+        if (nowMs - lastSnapchatDetectionMs < SNAPCHAT_DETECTION_INTERVAL_MS) {
+            return lastSnapchatTab
+        }
+
+        lastSnapchatDetectionMs = nowMs
+        val root = rootInActiveWindow ?: return lastSnapchatTab
+        val headerMaxY = dpToPx(SNAPCHAT_HEADER_MAX_Y_DP)
+        var foundStoriesHeader = false
+        var foundChatHeader = false
+
+        val queue: ArrayDeque<android.view.accessibility.AccessibilityNodeInfo> = ArrayDeque()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            val viewId = node.viewIdResourceName ?: ""
+            if (viewId == "com.snapchat.android:id/spotlight_container") {
+                lastSnapchatTab = SnapchatTab.SPOTLIGHT
+                return lastSnapchatTab
+            }
+
+            val text = node.text?.toString()?.trim()
+            if (!text.isNullOrEmpty()) {
+                if (text.equals("Spotlight", ignoreCase = false) && node.isSelected) {
+                    lastSnapchatTab = SnapchatTab.SPOTLIGHT
+                    return lastSnapchatTab
+                }
+                if (text.equals("Following", ignoreCase = false) && node.isSelected) {
+                    lastSnapchatTab = SnapchatTab.SPOTLIGHT
+                    return lastSnapchatTab
+                }
+                if (text == "Stories" || text == "Chat") {
+                    val bounds = android.graphics.Rect()
+                    node.getBoundsInScreen(bounds)
+                    if (bounds.top <= headerMaxY) {
+                        if (text == "Stories") {
+                            foundStoriesHeader = true
+                        } else if (text == "Chat") {
+                            foundChatHeader = true
+                        }
+                    }
+                }
+            }
+
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.add(it) }
+            }
+        }
+
+        lastSnapchatTab = when {
+            foundStoriesHeader -> SnapchatTab.STORIES
+            foundChatHeader -> SnapchatTab.CHAT
+            else -> SnapchatTab.UNKNOWN
+        }
+        return lastSnapchatTab
+    }
+
+    private enum class SnapchatTab {
+        STORIES,
+        SPOTLIGHT,
+        CHAT,
+        UNKNOWN
     }
 
     private val browserPackages = setOf(

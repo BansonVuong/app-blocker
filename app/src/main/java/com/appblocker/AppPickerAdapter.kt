@@ -43,11 +43,43 @@ class AppPickerAdapter(
     inner class ViewHolder(private val binding: ItemAppBinding) :
         RecyclerView.ViewHolder(binding.root) {
 
+        private val basePaddingStart = binding.root.paddingLeft
+        private val basePaddingTop = binding.root.paddingTop
+        private val basePaddingEnd = binding.root.paddingRight
+        private val basePaddingBottom = binding.root.paddingBottom
+        private val baseIconSize = binding.imageIcon.layoutParams.width
+
         fun bind(app: AppInfo) {
             binding.imageIcon.setImageDrawable(app.icon)
             binding.textAppName.text = app.appName
-            binding.textUsageTime.text = formatUsageTime(binding.root.context, app.usageSecondsLastWeek)
+            val context = binding.root.context
+            binding.textUsageTime.text = if (app.isVirtual) {
+                context.getString(R.string.snapchat_tab_label)
+            } else {
+                formatUsageTime(context, app.usageSecondsLastWeek)
+            }
             binding.checkbox.isChecked = selectedPackages.contains(app.packageName)
+
+            val indent = if (app.isVirtual) dpToPx(context, 20) else 0
+            binding.root.setPadding(
+                basePaddingStart + indent,
+                basePaddingTop,
+                basePaddingEnd,
+                basePaddingBottom
+            )
+
+            val iconParams = binding.imageIcon.layoutParams
+            if (app.isVirtual) {
+                val size = dpToPx(context, 32)
+                iconParams.width = size
+                iconParams.height = size
+                binding.imageIcon.alpha = 0.7f
+            } else {
+                iconParams.width = baseIconSize
+                iconParams.height = baseIconSize
+                binding.imageIcon.alpha = 1f
+            }
+            binding.imageIcon.layoutParams = iconParams
 
             binding.root.setOnClickListener {
                 if (selectedPackages.contains(app.packageName)) {
@@ -71,5 +103,10 @@ class AppPickerAdapter(
             "${minutes}m"
         }
         return context.getString(R.string.time_used, formatted)
+    }
+
+    private fun dpToPx(context: android.content.Context, dp: Int): Int {
+        val density = context.resources.displayMetrics.density
+        return (dp * density).toInt()
     }
 }

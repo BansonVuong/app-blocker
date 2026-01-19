@@ -81,6 +81,28 @@ class AppPickerActivity : AppCompatActivity() {
                         .thenByDescending { it.usageSecondsLastWeek }
                         .thenBy { it.appName.lowercase() }
                 )
+                .toMutableList()
+
+            val snapchatIndex = apps.indexOfFirst { it.packageName == AppTargets.SNAPCHAT_PACKAGE }
+            if (snapchatIndex >= 0) {
+                val snapchatApp = apps[snapchatIndex]
+                val stories = snapchatApp.copy(
+                    packageName = AppTargets.SNAPCHAT_STORIES,
+                    appName = "Stories",
+                    usageSecondsLastWeek = 0,
+                    isVirtual = true,
+                    parentPackage = AppTargets.SNAPCHAT_PACKAGE
+                )
+                val spotlight = snapchatApp.copy(
+                    packageName = AppTargets.SNAPCHAT_SPOTLIGHT,
+                    appName = "Spotlight",
+                    usageSecondsLastWeek = 0,
+                    isVirtual = true,
+                    parentPackage = AppTargets.SNAPCHAT_PACKAGE
+                )
+                apps.add(snapchatIndex + 1, stories)
+                apps.add(snapchatIndex + 2, spotlight)
+            }
 
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread

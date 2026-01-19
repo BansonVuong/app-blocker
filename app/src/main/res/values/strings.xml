@@ -17,6 +17,7 @@
     <string name="time_remaining">%d min remaining</string>
     <string name="time_left">%d:%02d left</string>
     <string name="time_used">Time used: %s</string>
+    <string name="snapchat_tab_label">Snapchat tab</string>
     <string name="quota_exceeded">Quota Exceeded</string>
     <string name="quota_exceeded_message">You\'ve used your time limit for this block set. Wait for your usage to expire.</string>
     <string name="unblocked_at">Unblocked at %s</string>

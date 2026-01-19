@@ -6,5 +6,7 @@ data class AppInfo(
     val packageName: String,
     val appName: String,
     val icon: Drawable,
-    val usageSecondsLastWeek: Int
+    val usageSecondsLastWeek: Int,
+    val isVirtual: Boolean = false,
+    val parentPackage: String? = null
 )
