@@ -37,6 +37,9 @@
     <string name="export_logs_missing">No debug logs yet. Enable Debug overlay and try again.</string>
     <string name="enter_block_set_name">Please enter a name</string>
     <string name="enter_quota_minutes">Please enter a valid quota in minutes</string>
+    <string name="sort_by">Sort by</string>
+    <string name="sort_time_spent">Time spent</string>
+    <string name="sort_alphabetical">Alphabetical</string>
 
     <string-array name="window_labels">
         <item>5 minutes</item>
@@ -45,5 +48,10 @@
         <item>20 minutes</item>
         <item>30 minutes</item>
         <item>1 hour</item>
+    </string-array>
+
+    <string-array name="app_sort_options">
+        <item>@string/sort_time_spent</item>
+        <item>@string/sort_alphabetical</item>
     </string-array>
 </resources>
