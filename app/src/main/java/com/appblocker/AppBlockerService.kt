@@ -150,7 +150,6 @@ class AppBlockerService : AccessibilityService() {
 
         // blockSet already looked up above for debug overlay
         if (blockSet != null) {
-            if (handleInAppBrowser(packageName, className, stopWhenBrowserNotBlocked = true, nowMs)) return
             handleBlockedApp(effectivePackageName, blockSet, nowMs)
             return
         }
@@ -160,8 +159,7 @@ class AppBlockerService : AccessibilityService() {
             return
         }
 
-        if (handleInAppBrowser(packageName, className, stopWhenBrowserNotBlocked = false, nowMs)) return
-        handleUnblockedAppSwitch(packageName)
+        handleUnblockedAppSwitch(effectivePackageName)
     }
 
     private fun handleBlockedApp(packageName: String, blockSet: BlockSet, nowMs: Long) {
@@ -216,49 +214,6 @@ class AppBlockerService : AccessibilityService() {
             scheduleStopTracking()
         }
         // If it's likely an overlay, just ignore it and keep tracking
-    }
-
-    private fun handleInAppBrowser(
-        packageName: String,
-        className: String?,
-        stopWhenBrowserNotBlocked: Boolean,
-        nowMs: Long
-    ): Boolean {
-        if (isBrowserPackage(packageName) || !isInAppBrowserClass(className)) return false
-
-        // In-app browser detected from a non-browser app (e.g., Instagram opening Chrome Custom Tab)
-        // Check if the associated browser is blocked - if so, track against it
-        val browserPackage = getBrowserPackageForInAppBrowser(className ?: "")
-        val browserBlockSet = browserPackage?.let { storage.getBlockSetForApp(it) }
-
-        if (browserBlockSet == null) {
-            if (stopWhenBrowserNotBlocked) {
-                // Browser is not blocked, so don't show overlay for in-app browser
-                logDebug("track", "in-app browser detected but browser not blocked, stopping")
-                stopTracking()
-                return true
-            }
-            return false
-        }
-
-        logDebug("track", "in-app browser from $packageName tracking against browser $browserPackage")
-        lastBlockedEventTimeMs = nowMs
-        cancelPendingStop()
-
-        if (storage.isQuotaExceeded(browserBlockSet)) {
-            logDebug("blocked", "quota exceeded for browser ${browserBlockSet.name}")
-            launchBlockedScreen(browserBlockSet.name, browserBlockSet.id)
-            stopTracking()
-            return true
-        }
-
-        if (currentTrackedPackage != browserPackage) {
-            logDebug("track", "switch to browser $browserPackage for in-app browser")
-            stopTracking()
-            startTracking(browserPackage, browserBlockSet)
-        }
-        updateOverlayWithLocalTracking(browserBlockSet)
-        return true
     }
 
     private fun startTracking(packageName: String, blockSet: BlockSet) {
@@ -641,6 +596,8 @@ class AppBlockerService : AccessibilityService() {
         eventType: Int,
         nowMs: Long
     ): String {
+        val inAppBrowserPackage = resolveInAppBrowserPackage(packageName, className)
+        if (inAppBrowserPackage != null) return inAppBrowserPackage
         if (packageName != AppTargets.SNAPCHAT_PACKAGE) return packageName
         if (storage.getBlockSetForApp(AppTargets.SNAPCHAT_PACKAGE) != null) {
             return AppTargets.SNAPCHAT_PACKAGE
@@ -659,6 +616,13 @@ class AppBlockerService : AccessibilityService() {
                 if (hasSpotlightBlock) AppTargets.SNAPCHAT_SPOTLIGHT else AppTargets.SNAPCHAT_PACKAGE
             else -> AppTargets.SNAPCHAT_PACKAGE
         }
+    }
+
+    private fun resolveInAppBrowserPackage(packageName: String, className: String?): String? {
+        if (packageName in inAppBrowserIgnorePackages) return null
+        if (isBrowserPackage(packageName)) return packageName
+        if (!isInAppBrowserClass(className)) return null
+        return getBrowserPackageForInAppBrowser(className ?: "")
     }
 
     private fun detectSnapchatTab(eventType: Int, nowMs: Long): SnapchatTab {
@@ -744,6 +708,9 @@ class AppBlockerService : AccessibilityService() {
         "com.opera.mini.native",
         "com.sec.android.app.sbrowser"
     )
+    private val inAppBrowserIgnorePackages = setOf(
+        "com.google.chromeremotedesktop"
+    )
 
     private fun isLikelyOverlayPackage(packageName: String): Boolean {
         if (packageName in browserPackages) return false
@@ -773,7 +740,7 @@ class AppBlockerService : AccessibilityService() {
             normalized.contains("opera") -> "com.opera.browser"
             normalized.contains("samsung") || normalized.contains("sbrowser") -> "com.sec.android.app.sbrowser"
             // Chrome Custom Tabs are the most common, default to Chrome for generic indicators
-            normalized.contains("customtab") || normalized.contains("chrome") -> "com.android.chrome"
+            normalized.contains("customtab") -> "com.android.chrome"
             // Generic webview/browser - assume Chrome as it's most common
             normalized.contains("webview") || normalized.contains("browser") || normalized.contains("webactivity") -> "com.android.chrome"
             else -> null
@@ -786,7 +753,6 @@ class AppBlockerService : AccessibilityService() {
         val indicators = listOf(
             "customtab",
             "customtabs",
-            "chrome",
             "browser",
             "webview",
             "webactivity",
