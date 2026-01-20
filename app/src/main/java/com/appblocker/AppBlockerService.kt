@@ -154,7 +154,7 @@ class AppBlockerService : AccessibilityService() {
         cancelPendingStop()
         if (storage.isQuotaExceeded(blockSet)) {
             logDebug("blocked", "quota exceeded for ${blockSet.name}")
-            launchBlockedScreen(blockSet.name, blockSet.id)
+            launchBlockedScreen(blockSet.name, blockSet.id, packageName)
             stopTracking()
             return
         }
@@ -254,7 +254,8 @@ class AppBlockerService : AccessibilityService() {
 
                         // Block immediately when local timer hits zero
                         if (localRemainingSeconds <= 0) {
-                            launchBlockedScreen(updatedBlockSet.name, updatedBlockSet.id)
+                            val trackedPackage = currentTrackedPackage ?: ""
+                            launchBlockedScreen(updatedBlockSet.name, updatedBlockSet.id, trackedPackage)
                             stopTracking()
                             return
                         }
@@ -324,12 +325,17 @@ class AppBlockerService : AccessibilityService() {
     /**
      * Launch the blocking activity showing quota exceeded UI.
      */
-    private fun launchBlockedScreen(blockSetName: String, blockSetId: String? = null) {
+    private fun launchBlockedScreen(
+        blockSetName: String,
+        blockSetId: String? = null,
+        blockedPackageName: String? = null
+    ) {
         val intent = Intent(this, BlockedActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             putExtra(BlockedActivity.EXTRA_BLOCK_SET_NAME, blockSetName)
             blockSetId?.let { putExtra(BlockedActivity.EXTRA_BLOCK_SET_ID, it) }
+            blockedPackageName?.let { putExtra(BlockedActivity.EXTRA_RETURN_PACKAGE, it) }
         }
         startActivity(intent)
     }
@@ -477,6 +483,8 @@ class AppBlockerService : AccessibilityService() {
             val headerMaxY = dpToPx(SNAPCHAT_HEADER_MAX_Y_DP)
             var foundStoriesHeader = false
             var foundChatHeader = false
+            var selectedStories = false
+            var selectedChat = false
 
             val queue: ArrayDeque<android.view.accessibility.AccessibilityNodeInfo> = ArrayDeque()
             queue.add(rootNode)
@@ -498,13 +506,24 @@ class AppBlockerService : AccessibilityService() {
                         lastTab = SnapchatTab.SPOTLIGHT
                         return lastTab
                     }
-                    if (text == "Stories" || text == "Chat") {
-                        val bounds = android.graphics.Rect()
-                        node.getBoundsInScreen(bounds)
-                        if (bounds.top <= headerMaxY) {
-                            if (text == "Stories") {
+                    if (text == "Stories") {
+                        if (node.isSelected) {
+                            selectedStories = true
+                        } else {
+                            val bounds = android.graphics.Rect()
+                            node.getBoundsInScreen(bounds)
+                            if (bounds.top <= headerMaxY) {
                                 foundStoriesHeader = true
-                            } else if (text == "Chat") {
+                            }
+                        }
+                    }
+                    if (text == "Chat") {
+                        if (node.isSelected) {
+                            selectedChat = true
+                        } else {
+                            val bounds = android.graphics.Rect()
+                            node.getBoundsInScreen(bounds)
+                            if (bounds.top <= headerMaxY) {
                                 foundChatHeader = true
                             }
                         }
@@ -517,8 +536,10 @@ class AppBlockerService : AccessibilityService() {
             }
 
             lastTab = when {
-                foundStoriesHeader -> SnapchatTab.STORIES
-                foundChatHeader -> SnapchatTab.CHAT
+                selectedStories -> SnapchatTab.STORIES
+                selectedChat -> SnapchatTab.CHAT
+                foundStoriesHeader && !foundChatHeader -> SnapchatTab.STORIES
+                foundChatHeader && !foundStoriesHeader -> SnapchatTab.CHAT
                 else -> SnapchatTab.UNKNOWN
             }
             return lastTab

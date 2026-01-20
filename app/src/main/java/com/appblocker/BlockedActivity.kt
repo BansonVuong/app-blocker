@@ -28,6 +28,7 @@ class BlockedActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_BLOCK_SET_NAME = "block_set_name"
         const val EXTRA_BLOCK_SET_ID = "block_set_id"
+        const val EXTRA_RETURN_PACKAGE = "return_package"
         private const val UPDATE_INTERVAL_MS = 30_000L
     }
 
@@ -71,11 +72,21 @@ class BlockedActivity : AppCompatActivity() {
     }
 
     private fun goHome() {
-        val intent = Intent(Intent.ACTION_MAIN).apply {
+        val returnPackage = intent.getStringExtra(EXTRA_RETURN_PACKAGE)
+        if (returnPackage != null && AppTargets.isVirtualPackage(returnPackage)) {
+            val launchIntent = packageManager.getLaunchIntentForPackage(AppTargets.SNAPCHAT_PACKAGE)
+            if (launchIntent != null) {
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(launchIntent)
+                finish()
+                return
+            }
+        }
+        val homeIntent = Intent(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_HOME)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
         }
-        startActivity(intent)
+        startActivity(homeIntent)
         finish()
     }
 
