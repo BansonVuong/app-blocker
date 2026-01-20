@@ -54,6 +54,12 @@ class AppBlockerServiceTest {
         field.set(service, value)
     }
 
+    private fun getNestedPrivateField(instance: Any, fieldName: String): Any? {
+        val field = instance.javaClass.getDeclaredField(fieldName)
+        field.isAccessible = true
+        return field.get(instance)
+    }
+
     @Test
     fun launchesBlockedScreenWhenQuotaExceeded() {
         val storage = (app as App).storage
@@ -460,7 +466,7 @@ class AppBlockerServiceTest {
 
         // Send a different event type
         val event = AccessibilityEvent.obtain().apply {
-            eventType = AccessibilityEvent.TYPE_VIEW_CLICKED
+            eventType = AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED
             packageName = "com.instagram.android"
         }
         service.onAccessibilityEvent(event)
@@ -537,11 +543,14 @@ class AppBlockerServiceTest {
         val trackedBefore = getPrivateField(service, "currentTrackedPackage") as String?
         assertEquals("com.instagram.android", trackedBefore)
 
-        val intent = Intent(Intent.ACTION_SCREEN_OFF)
-        app.sendBroadcast(intent)
+        val screenStateTracker = getPrivateField(service, "screenStateTracker")
+        val receiver = screenStateTracker?.let { getNestedPrivateField(it, "receiver") }
+            as android.content.BroadcastReceiver
+        receiver.onReceive(app, Intent(Intent.ACTION_SCREEN_OFF))
 
         val trackedAfter = getPrivateField(service, "currentTrackedPackage") as String?
-        val overlayView = getPrivateField(service, "overlayView")
+        val overlayController = getPrivateField(service, "overlayController")
+        val overlayView = overlayController?.let { getNestedPrivateField(it, "overlayView") }
         val overlayRunnable = getPrivateField(service, "overlayUpdateRunnable")
 
         assertNull(trackedAfter)

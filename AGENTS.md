@@ -1,0 +1,1 @@
+Always run tests after completing a task.

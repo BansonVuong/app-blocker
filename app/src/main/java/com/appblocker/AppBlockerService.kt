@@ -20,6 +20,10 @@ import androidx.core.content.ContextCompat
 import android.content.SharedPreferences
 import android.util.Log
 
+/**
+ * Accessibility service that monitors foreground app changes and enforces block sets.
+ * Renders overlays for timers/debugging and tracks usage windows in near real time.
+ */
 class AppBlockerService : AccessibilityService() {
 
     private lateinit var storage: Storage
@@ -28,16 +32,11 @@ class AppBlockerService : AccessibilityService() {
     private var currentBlockSet: BlockSet? = null
     private var overlayUpdateRunnable: Runnable? = null
     private var pendingStopRunnable: Runnable? = null
-    private var overlayView: TextView? = null
-    private var overlayLayoutParams: WindowManager.LayoutParams? = null
-    private var debugOverlayView: TextView? = null
-    private var windowManager: WindowManager? = null
+    private lateinit var overlayController: OverlayController
+    private lateinit var screenStateTracker: ScreenStateTracker
     private var debugOverlayPrefListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
     private var lastBlockedEventTimeMs: Long = 0
-    private var screenStateReceiver: BroadcastReceiver? = null
-    private var isScreenOff: Boolean = false
-    private var lastSnapchatDetectionMs: Long = 0
-    private var lastSnapchatTab: SnapchatTab = SnapchatTab.UNKNOWN
+    private val snapchatDetector = SnapchatDetector()
 
     // Local session tracking to enable immediate blocking when timer runs out
     private var sessionStartTimeMs: Long = 0
@@ -59,32 +58,17 @@ class AppBlockerService : AccessibilityService() {
     override fun onCreate() {
         super.onCreate()
         storage = App.instance.storage
-        windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-        screenStateReceiver = object : BroadcastReceiver() {
-            override fun onReceive(context: android.content.Context?, intent: Intent?) {
-                when (intent?.action) {
-                    Intent.ACTION_SCREEN_OFF -> {
-                        isScreenOff = true
-                        stopTracking()
-                        removeOverlay()
-                        removeDebugOverlay()
-                    }
-                    Intent.ACTION_SCREEN_ON -> {
-                        isScreenOff = false
-                    }
-                }
-            }
-        }
-        registerReceiver(
-            screenStateReceiver,
-            IntentFilter().apply {
-                addAction(Intent.ACTION_SCREEN_OFF)
-                addAction(Intent.ACTION_SCREEN_ON)
-            }
+        overlayController = OverlayController(getSystemService(WINDOW_SERVICE) as WindowManager)
+        screenStateTracker = ScreenStateTracker(
+            onScreenOff = {
+                stopTracking()
+            },
+            onScreenOn = {}
         )
+        screenStateTracker.register()
         debugOverlayPrefListener = storage.registerDebugOverlayEnabledListener { enabled ->
             if (!enabled) {
-                removeDebugOverlay()
+                overlayController.removeDebugOverlay()
                 // Update timer overlay based on current tracking state
                 // If tracking a blocked app, show timer; otherwise remove overlay
                 updateOverlayWithLocalTracking(currentBlockSet)
@@ -92,7 +76,7 @@ class AppBlockerService : AccessibilityService() {
             }
             val trackedPackage = currentTrackedPackage ?: return@registerDebugOverlayEnabledListener
             val blockSet = storage.getBlockSetForApp(trackedPackage)
-            updateDebugOverlay(trackedPackage, blockSet != null, currentTrackedPackage)
+            overlayController.updateDebugOverlay(trackedPackage, blockSet != null, currentTrackedPackage)
             updateOverlay(currentBlockSet)
         }
     }
@@ -107,11 +91,10 @@ class AppBlockerService : AccessibilityService() {
         super.onDestroy()
         isRunning = false
         stopTracking()
-        removeOverlay()
+        overlayController.removeOverlay()
         debugOverlayPrefListener?.let { storage.unregisterDebugOverlayEnabledListener(it) }
         debugOverlayPrefListener = null
-        screenStateReceiver?.let { unregisterReceiver(it) }
-        screenStateReceiver = null
+        screenStateTracker.unregister()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -162,6 +145,10 @@ class AppBlockerService : AccessibilityService() {
         handleUnblockedAppSwitch(effectivePackageName)
     }
 
+    /**
+     * Handle a foreground app that is in a block set; updates tracking and launches the blocked
+     * screen if the quota is exceeded.
+     */
     private fun handleBlockedApp(packageName: String, blockSet: BlockSet, nowMs: Long) {
         lastBlockedEventTimeMs = nowMs
         cancelPendingStop()
@@ -182,6 +169,9 @@ class AppBlockerService : AccessibilityService() {
         updateOverlayWithLocalTracking(blockSet)
     }
 
+    /**
+     * Handle events originating from this app's own package to avoid false stop/start cycles.
+     */
     private fun handleAppBlockerPackageEvent(className: String?, nowMs: Long) {
         val recentlyInBlockedApp = currentTrackedPackage != null &&
             (nowMs - lastBlockedEventTimeMs) < RECENT_BLOCKED_EVENT_THRESHOLD_MS
@@ -203,6 +193,9 @@ class AppBlockerService : AccessibilityService() {
         }
     }
 
+    /**
+     * Handle switches to apps that are not blocked, with overlay/system UI filtering.
+     */
     private fun handleUnblockedAppSwitch(packageName: String) {
         // Only stop tracking if this looks like a real app switch (not a system overlay/dialog)
         // System overlays, keyboards, etc. often have short package names or system prefixes
@@ -216,6 +209,9 @@ class AppBlockerService : AccessibilityService() {
         // If it's likely an overlay, just ignore it and keep tracking
     }
 
+    /**
+     * Begin tracking a blocked app and start the local countdown/overlay updates.
+     */
     private fun startTracking(packageName: String, blockSet: BlockSet) {
         cancelPendingStop()
         currentTrackedPackage = packageName
@@ -233,7 +229,7 @@ class AppBlockerService : AccessibilityService() {
 
         // Update overlay immediately
         updateOverlayWithLocalTracking(blockSet)
-        applyStoredOverlayPosition(packageName)
+        overlayController.applyStoredOverlayPosition(packageName)
 
         // Then update overlay periodically with local tracking for immediate response
         overlayUpdateRunnable = object : Runnable {
@@ -276,6 +272,9 @@ class AppBlockerService : AccessibilityService() {
         return maxOf(0, initialRemainingSeconds - elapsedSeconds)
     }
 
+    /**
+     * Stop tracking the current app and clear local session state.
+     */
     private fun stopTracking() {
         cancelPendingStop()
         overlayUpdateRunnable?.let { handler.removeCallbacks(it) }
@@ -294,6 +293,9 @@ class AppBlockerService : AccessibilityService() {
         updateOverlay(null)
     }
 
+    /**
+     * Schedule a short delayed stop to avoid flicker from transient overlays.
+     */
     private fun scheduleStopTracking() {
         if (currentTrackedPackage == null) {
             stopTracking()
@@ -308,6 +310,9 @@ class AppBlockerService : AccessibilityService() {
         handler.postDelayed(pendingStopRunnable!!, PENDING_STOP_DELAY_MS)
     }
 
+    /**
+     * Cancel any pending delayed stop.
+     */
     private fun cancelPendingStop() {
         if (pendingStopRunnable != null) {
             logDebug("track", "cancel pending stop")
@@ -316,6 +321,9 @@ class AppBlockerService : AccessibilityService() {
         pendingStopRunnable = null
     }
 
+    /**
+     * Launch the blocking activity showing quota exceeded UI.
+     */
     private fun launchBlockedScreen(blockSetName: String, blockSetId: String? = null) {
         val intent = Intent(this, BlockedActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -326,239 +334,46 @@ class AppBlockerService : AccessibilityService() {
         startActivity(intent)
     }
 
+    /**
+     * Update the main overlay using persisted usage stats.
+     */
     private fun updateOverlay(blockSet: BlockSet?) {
-        if (!Settings.canDrawOverlays(this)) {
-            return
-        }
-        if (isScreenOff) {
-            removeOverlay()
-            return
-        }
-        logDebug("overlay", "update blockSet=${blockSet?.name} view=${overlayView != null}")
-
-        if (blockSet == null) {
-            if (!storage.isDebugOverlayEnabled()) {
-                logDebug("overlay", "remove (no blockSet)")
-                removeViewSafely(overlayView)
-                overlayView = null
-                return
-            }
-            val view = ensureOverlayView()
-            view.text = "No blocked app"
-            view.setTextColor(ContextCompat.getColor(this, R.color.white))
-            return
-        }
-
-        val remainingSeconds = storage.getRemainingSeconds(blockSet)
-        val view = ensureOverlayView()
-        view.text = formatRemainingTime(remainingSeconds)
-        view.setTextColor(ContextCompat.getColor(this, R.color.white))
+        overlayController.updateOverlay(blockSet)
     }
 
+    /**
+     * Update the overlay using local countdown tracking for immediate response.
+     */
     private fun updateOverlayWithLocalTracking(blockSet: BlockSet?) {
-        if (!Settings.canDrawOverlays(this)) {
-            return
-        }
-        if (isScreenOff) {
-            removeOverlay()
-            return
-        }
-
         if (blockSet == null) {
             logDebug("overlay", "local update with null blockSet")
             updateOverlay(null)
             return
         }
-
-        // Use local tracking for more accurate real-time countdown
         val remainingSeconds = getLocalRemainingSeconds()
-        val view = ensureOverlayView()
-        logDebug("overlay", "local update blockSet=${blockSet.name} remaining=$remainingSeconds")
-        view.text = formatRemainingTime(remainingSeconds)
-        view.setTextColor(ContextCompat.getColor(this, R.color.white))
+        overlayController.updateOverlayWithLocalTracking(blockSet, remainingSeconds)
     }
 
-    @SuppressLint("ClickableViewAccessibility")
-    private fun ensureOverlayView(): TextView {
-        if (overlayView != null) return overlayView!!
-
-        val view = TextView(this)
-        view.setTextColor(Color.WHITE)
-        view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14f)
-        view.typeface = Typeface.DEFAULT_BOLD
-        view.setPadding(dpToPx(10), dpToPx(6), dpToPx(10), dpToPx(6))
-        view.background = GradientDrawable().apply {
-            cornerRadius = dpToPx(12).toFloat()
-            setColor(Color.argb(200, 0, 0, 0))
-        }
-
-        val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-            android.graphics.PixelFormat.TRANSLUCENT
-        )
-        params.gravity = Gravity.TOP or Gravity.START
-        val storedPosition = currentTrackedPackage?.let { storage.getOverlayPosition(it) }
-        params.x = storedPosition?.first ?: dpToPx(OVERLAY_MARGIN_DP)
-        params.y = storedPosition?.second ?: dpToPx(OVERLAY_MARGIN_DP)
-
-        // Make the timer overlay draggable
-        var initialX = 0
-        var initialY = 0
-        var initialTouchX = 0f
-        var initialTouchY = 0f
-
-        view.setOnTouchListener { _, event ->
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    initialX = params.x
-                    initialY = params.y
-                    initialTouchX = event.rawX
-                    initialTouchY = event.rawY
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    params.x = initialX + (event.rawX - initialTouchX).toInt()
-                    params.y = initialY + (event.rawY - initialTouchY).toInt()
-                    windowManager?.updateViewLayout(view, params)
-                    true
-                }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    persistOverlayPosition(params.x, params.y)
-                    true
-                }
-                else -> false
-            }
-        }
-
-        windowManager?.addView(view, params)
-        overlayView = view
-        overlayLayoutParams = params
-        return view
-    }
-
-    private fun removeOverlay() {
-        logDebug("overlay", "remove")
-        removeViewSafely(overlayView)
-        overlayView = null
-        overlayLayoutParams = null
-        removeDebugOverlay()
-    }
-
-    private fun removeDebugOverlay() {
-        logDebug("debug", "remove")
-        removeViewSafely(debugOverlayView)
-        debugOverlayView = null
-    }
-
-    private fun updateDebugOverlay(packageName: String, isBlocked: Boolean, tracking: String?) {
-        if (!Settings.canDrawOverlays(this)) return
-        if (isScreenOff) return
-
-        val shortName = packageName.substringAfterLast(".")
-        val status = if (isBlocked) "BLOCKED" else "not blocked"
-        val trackingInfo = tracking?.substringAfterLast(".") ?: "none"
-        val text = "$shortName ($status)\ntracking: $trackingInfo"
-
-        val view = ensureDebugOverlayView()
-        logDebug("debug", "update $text")
-        view.text = text
-    }
-
-    @SuppressLint("ClickableViewAccessibility")
-    private fun ensureDebugOverlayView(): TextView {
-        if (debugOverlayView != null) return debugOverlayView!!
-
-        val view = TextView(this)
-        view.setTextColor(Color.YELLOW)
-        view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 11f)
-        view.setPadding(dpToPx(8), dpToPx(4), dpToPx(8), dpToPx(4))
-        view.background = GradientDrawable().apply {
-            cornerRadius = dpToPx(8).toFloat()
-            setColor(Color.argb(200, 50, 50, 50))
-        }
-
-        val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-            android.graphics.PixelFormat.TRANSLUCENT
-        )
-        params.gravity = Gravity.TOP or Gravity.START
-        params.x = dpToPx(OVERLAY_MARGIN_DP)
-        params.y = dpToPx(OVERLAY_MARGIN_DP + 40)
-
-        // Make the overlay draggable
-        var initialX = 0
-        var initialY = 0
-        var initialTouchX = 0f
-        var initialTouchY = 0f
-
-        view.setOnTouchListener { _, event ->
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    initialX = params.x
-                    initialY = params.y
-                    initialTouchX = event.rawX
-                    initialTouchY = event.rawY
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    params.x = initialX + (event.rawX - initialTouchX).toInt()
-                    params.y = initialY + (event.rawY - initialTouchY).toInt()
-                    windowManager?.updateViewLayout(view, params)
-                    true
-                }
-                else -> false
-            }
-        }
-
-        windowManager?.addView(view, params)
-        debugOverlayView = view
-        return view
-    }
-
+    /**
+     * Format remaining seconds as a localized MM:SS string.
+     */
     private fun formatRemainingTime(remainingSeconds: Int): String {
         val minutes = remainingSeconds / 60
         val seconds = remainingSeconds % 60
         return getString(R.string.time_left, minutes, seconds)
     }
 
+    /**
+     * Convert dp to pixels based on current display density.
+     */
     private fun dpToPx(dp: Int): Int {
         val density = resources.displayMetrics.density
         return (dp * density).toInt()
     }
 
-    private fun persistOverlayPosition(x: Int, y: Int) {
-        val packageName = currentTrackedPackage ?: return
-        storage.setOverlayPosition(packageName, x, y)
-    }
-
-    private fun applyStoredOverlayPosition(packageName: String) {
-        val position = storage.getOverlayPosition(packageName) ?: return
-        val params = overlayLayoutParams ?: return
-        params.gravity = Gravity.TOP or Gravity.START
-        params.x = position.first
-        params.y = position.second
-        overlayView?.let { windowManager?.updateViewLayout(it, params) }
-    }
-
-    private fun removeViewSafely(view: TextView?) {
-        if (view == null) return
-        try {
-            if (view.isAttachedToWindow) {
-                windowManager?.removeView(view)
-            }
-        } catch (_: IllegalArgumentException) {
-            // View already removed or not attached.
-        }
-    }
-
+    /**
+     * Log to Logcat and optional on-device debug log file when enabled.
+     */
     private fun logDebug(tag: String, message: String) {
         if (!BuildConfig.DEBUG_TOOLS_ENABLED) return
         if (!storage.isDebugOverlayEnabled() && !storage.isDebugLogCaptureEnabled()) return
@@ -568,21 +383,30 @@ class AppBlockerService : AccessibilityService() {
 
     // ===== Debug-only helpers (easy to remove) =====
 
+    /**
+     * Show or hide the debug overlay based on debug prefs.
+     */
     private fun handleDebugOverlay(packageName: String, isBlocked: Boolean) {
         if (!BuildConfig.DEBUG_TOOLS_ENABLED) return
         if (storage.isDebugOverlayEnabled()) {
-            updateDebugOverlay(packageName, isBlocked, currentTrackedPackage)
+            overlayController.updateDebugOverlay(packageName, isBlocked, currentTrackedPackage)
         } else {
-            removeDebugOverlay()
+            overlayController.removeDebugOverlay()
         }
     }
 
+    /**
+     * Build a compact message for debug logging.
+     */
     private fun buildEventLogMessage(packageName: String, className: String?): String {
         val safeClassName = className ?: "null"
         return "pkg=$packageName class=$safeClassName tracked=$currentTrackedPackage " +
             "pendingStop=${pendingStopRunnable != null}"
     }
 
+    /**
+     * Filter for event types we care about.
+     */
     private fun shouldHandleAccessibilityEvent(eventType: Int): Boolean {
         return eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
             eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ||
@@ -590,6 +414,9 @@ class AppBlockerService : AccessibilityService() {
             eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED
     }
 
+    /**
+     * Resolve the effective package name to match block rules (e.g., Snapchat tabs).
+     */
     private fun resolveEffectivePackageName(
         packageName: String,
         className: String?,
@@ -608,7 +435,7 @@ class AppBlockerService : AccessibilityService() {
             return AppTargets.SNAPCHAT_PACKAGE
         }
 
-        val tab = detectSnapchatTab(eventType, nowMs)
+        val tab = snapchatDetector.detect(eventType, nowMs, rootInActiveWindow)
         return when (tab) {
             SnapchatTab.STORIES ->
                 if (hasStoriesBlock) AppTargets.SNAPCHAT_STORIES else AppTargets.SNAPCHAT_PACKAGE
@@ -618,6 +445,9 @@ class AppBlockerService : AccessibilityService() {
         }
     }
 
+    /**
+     * Detect in-app browser contexts and map them to a real browser package.
+     */
     private fun resolveInAppBrowserPackage(packageName: String, className: String?): String? {
         if (packageName in inAppBrowserIgnorePackages) return null
         if (isBrowserPackage(packageName)) return packageName
@@ -625,65 +455,74 @@ class AppBlockerService : AccessibilityService() {
         return getBrowserPackageForInAppBrowser(className ?: "")
     }
 
-    private fun detectSnapchatTab(eventType: Int, nowMs: Long): SnapchatTab {
-        val shouldUpdate = eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
-            eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ||
-            eventType == AccessibilityEvent.TYPE_VIEW_CLICKED
-        if (!shouldUpdate) return lastSnapchatTab
-        if (nowMs - lastSnapchatDetectionMs < SNAPCHAT_DETECTION_INTERVAL_MS) {
-            return lastSnapchatTab
-        }
+    private inner class SnapchatDetector {
+        private var lastDetectionMs: Long = 0
+        private var lastTab: SnapchatTab = SnapchatTab.UNKNOWN
 
-        lastSnapchatDetectionMs = nowMs
-        val root = rootInActiveWindow ?: return lastSnapchatTab
-        val headerMaxY = dpToPx(SNAPCHAT_HEADER_MAX_Y_DP)
-        var foundStoriesHeader = false
-        var foundChatHeader = false
-
-        val queue: ArrayDeque<android.view.accessibility.AccessibilityNodeInfo> = ArrayDeque()
-        queue.add(root)
-        while (queue.isNotEmpty()) {
-            val node = queue.removeFirst()
-            val viewId = node.viewIdResourceName ?: ""
-            if (viewId == "com.snapchat.android:id/spotlight_container") {
-                lastSnapchatTab = SnapchatTab.SPOTLIGHT
-                return lastSnapchatTab
+        fun detect(
+            eventType: Int,
+            nowMs: Long,
+            root: android.view.accessibility.AccessibilityNodeInfo?
+        ): SnapchatTab {
+            val shouldUpdate = eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+                eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ||
+                eventType == AccessibilityEvent.TYPE_VIEW_CLICKED
+            if (!shouldUpdate) return lastTab
+            if (nowMs - lastDetectionMs < SNAPCHAT_DETECTION_INTERVAL_MS) {
+                return lastTab
             }
 
-            val text = node.text?.toString()?.trim()
-            if (!text.isNullOrEmpty()) {
-                if (text.equals("Spotlight", ignoreCase = false) && node.isSelected) {
-                    lastSnapchatTab = SnapchatTab.SPOTLIGHT
-                    return lastSnapchatTab
+            lastDetectionMs = nowMs
+            val rootNode = root ?: return lastTab
+            val headerMaxY = dpToPx(SNAPCHAT_HEADER_MAX_Y_DP)
+            var foundStoriesHeader = false
+            var foundChatHeader = false
+
+            val queue: ArrayDeque<android.view.accessibility.AccessibilityNodeInfo> = ArrayDeque()
+            queue.add(rootNode)
+            while (queue.isNotEmpty()) {
+                val node = queue.removeFirst()
+                val viewId = node.viewIdResourceName ?: ""
+                if (viewId == "com.snapchat.android:id/spotlight_container") {
+                    lastTab = SnapchatTab.SPOTLIGHT
+                    return lastTab
                 }
-                if (text.equals("Following", ignoreCase = false) && node.isSelected) {
-                    lastSnapchatTab = SnapchatTab.SPOTLIGHT
-                    return lastSnapchatTab
-                }
-                if (text == "Stories" || text == "Chat") {
-                    val bounds = android.graphics.Rect()
-                    node.getBoundsInScreen(bounds)
-                    if (bounds.top <= headerMaxY) {
-                        if (text == "Stories") {
-                            foundStoriesHeader = true
-                        } else if (text == "Chat") {
-                            foundChatHeader = true
+
+                val text = node.text?.toString()?.trim()
+                if (!text.isNullOrEmpty()) {
+                    if (text.equals("Spotlight", ignoreCase = false) && node.isSelected) {
+                        lastTab = SnapchatTab.SPOTLIGHT
+                        return lastTab
+                    }
+                    if (text.equals("Following", ignoreCase = false) && node.isSelected) {
+                        lastTab = SnapchatTab.SPOTLIGHT
+                        return lastTab
+                    }
+                    if (text == "Stories" || text == "Chat") {
+                        val bounds = android.graphics.Rect()
+                        node.getBoundsInScreen(bounds)
+                        if (bounds.top <= headerMaxY) {
+                            if (text == "Stories") {
+                                foundStoriesHeader = true
+                            } else if (text == "Chat") {
+                                foundChatHeader = true
+                            }
                         }
                     }
                 }
+
+                for (i in 0 until node.childCount) {
+                    node.getChild(i)?.let { queue.add(it) }
+                }
             }
 
-            for (i in 0 until node.childCount) {
-                node.getChild(i)?.let { queue.add(it) }
+            lastTab = when {
+                foundStoriesHeader -> SnapchatTab.STORIES
+                foundChatHeader -> SnapchatTab.CHAT
+                else -> SnapchatTab.UNKNOWN
             }
+            return lastTab
         }
-
-        lastSnapchatTab = when {
-            foundStoriesHeader -> SnapchatTab.STORIES
-            foundChatHeader -> SnapchatTab.CHAT
-            else -> SnapchatTab.UNKNOWN
-        }
-        return lastSnapchatTab
     }
 
     private enum class SnapchatTab {
@@ -712,6 +551,9 @@ class AppBlockerService : AccessibilityService() {
         "com.google.chromeremotedesktop"
     )
 
+    /**
+     * Heuristic for transient system overlays that should not trigger stop tracking.
+     */
     private fun isLikelyOverlayPackage(packageName: String): Boolean {
         if (packageName in browserPackages) return false
 
@@ -723,6 +565,9 @@ class AppBlockerService : AccessibilityService() {
             packageName.contains("overlay")
     }
 
+    /**
+     * Identify well-known browser packages.
+     */
     private fun isBrowserPackage(packageName: String): Boolean {
         return packageName in browserPackages
     }
@@ -731,22 +576,25 @@ class AppBlockerService : AccessibilityService() {
      * Returns the browser package associated with an in-app browser class name.
      * Chrome Custom Tabs are most common, so we default to Chrome.
      */
+    /**
+     * Map a class name to a likely browser package, used for custom tabs/webviews.
+     */
     private fun getBrowserPackageForInAppBrowser(className: String): String? {
         val normalized = className.lowercase()
         return when {
+            normalized.contains("chrome") -> "com.android.chrome"
             normalized.contains("firefox") -> "org.mozilla.firefox"
             normalized.contains("brave") -> "com.brave.browser"
             normalized.contains("edge") || normalized.contains("emmx") -> "com.microsoft.emmx"
             normalized.contains("opera") -> "com.opera.browser"
             normalized.contains("samsung") || normalized.contains("sbrowser") -> "com.sec.android.app.sbrowser"
-            // Chrome Custom Tabs are the most common, default to Chrome for generic indicators
-            normalized.contains("customtab") -> "com.android.chrome"
-            // Generic webview/browser - assume Chrome as it's most common
-            normalized.contains("webview") || normalized.contains("browser") || normalized.contains("webactivity") -> "com.android.chrome"
             else -> null
         }
     }
 
+    /**
+     * Identify class names that commonly represent in-app browser surfaces.
+     */
     private fun isInAppBrowserClass(className: String?): Boolean {
         if (className == null) return false
         val normalized = className.lowercase()
@@ -759,6 +607,274 @@ class AppBlockerService : AccessibilityService() {
             "inappbrowser"
         )
         return indicators.any { normalized.contains(it) }
+    }
+
+    /**
+     * Tracks screen on/off state to pause overlays and tracking when screen is off.
+     */
+    private inner class ScreenStateTracker(
+        private val onScreenOff: () -> Unit,
+        private val onScreenOn: () -> Unit
+    ) {
+        var isScreenOff: Boolean = false
+            private set
+
+        private val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: android.content.Context?, intent: Intent?) {
+                when (intent?.action) {
+                    Intent.ACTION_SCREEN_OFF -> {
+                        isScreenOff = true
+                        onScreenOff()
+                    }
+                    Intent.ACTION_SCREEN_ON -> {
+                        isScreenOff = false
+                        onScreenOn()
+                    }
+                }
+            }
+        }
+
+        fun register() {
+            registerReceiver(
+                receiver,
+                IntentFilter().apply {
+                    addAction(Intent.ACTION_SCREEN_OFF)
+                    addAction(Intent.ACTION_SCREEN_ON)
+                }
+            )
+        }
+
+        fun unregister() {
+            unregisterReceiver(receiver)
+        }
+    }
+
+    /**
+     * Manages overlay and debug overlay views along with position persistence.
+     */
+    private inner class OverlayController(
+        private val windowManager: WindowManager
+    ) {
+        private var overlayView: TextView? = null
+        private var overlayLayoutParams: WindowManager.LayoutParams? = null
+        private var debugOverlayView: TextView? = null
+
+        fun updateOverlay(blockSet: BlockSet?) {
+            if (!Settings.canDrawOverlays(this@AppBlockerService)) {
+                removeOverlay()
+                return
+            }
+            if (screenStateTracker.isScreenOff) {
+                removeOverlay()
+                return
+            }
+            logDebug("overlay", "update blockSet=${blockSet?.name} view=${overlayView != null}")
+
+            if (blockSet == null) {
+                logDebug("overlay", "remove (no blockSet)")
+                removeViewSafely(overlayView)
+                overlayView = null
+                overlayLayoutParams = null
+                return
+            }
+
+            val remainingSeconds = storage.getRemainingSeconds(blockSet)
+            val view = ensureOverlayView()
+            view.text = formatRemainingTime(remainingSeconds)
+            view.setTextColor(ContextCompat.getColor(this@AppBlockerService, R.color.white))
+        }
+
+        fun updateOverlayWithLocalTracking(blockSet: BlockSet, remainingSeconds: Int) {
+            if (!Settings.canDrawOverlays(this@AppBlockerService)) {
+                removeOverlay()
+                return
+            }
+            if (screenStateTracker.isScreenOff) {
+                removeOverlay()
+                return
+            }
+
+            val view = ensureOverlayView()
+            logDebug("overlay", "local update blockSet=${blockSet.name} remaining=$remainingSeconds")
+            view.text = formatRemainingTime(remainingSeconds)
+            view.setTextColor(ContextCompat.getColor(this@AppBlockerService, R.color.white))
+        }
+
+        fun updateDebugOverlay(packageName: String, isBlocked: Boolean, tracking: String?) {
+            if (!Settings.canDrawOverlays(this@AppBlockerService)) {
+                removeDebugOverlay()
+                return
+            }
+            if (screenStateTracker.isScreenOff) {
+                removeDebugOverlay()
+                return
+            }
+
+            val shortName = packageName.substringAfterLast(".")
+            val status = if (isBlocked) "BLOCKED" else "not blocked"
+            val trackingInfo = tracking?.substringAfterLast(".") ?: "none"
+            val text = "$shortName ($status)\ntracking: $trackingInfo"
+
+            val view = ensureDebugOverlayView()
+            logDebug("debug", "update $text")
+            view.text = text
+        }
+
+        fun removeOverlay() {
+            logDebug("overlay", "remove")
+            removeViewSafely(overlayView)
+            overlayView = null
+            overlayLayoutParams = null
+            removeDebugOverlay()
+        }
+
+        fun removeDebugOverlay() {
+            logDebug("debug", "remove")
+            removeViewSafely(debugOverlayView)
+            debugOverlayView = null
+        }
+
+        fun applyStoredOverlayPosition(packageName: String) {
+            val position = storage.getOverlayPosition(packageName) ?: return
+            val params = overlayLayoutParams ?: return
+            params.gravity = Gravity.TOP or Gravity.START
+            params.x = position.first
+            params.y = position.second
+            overlayView?.let { windowManager.updateViewLayout(it, params) }
+        }
+
+        @SuppressLint("ClickableViewAccessibility")
+        private fun ensureOverlayView(): TextView {
+            if (overlayView != null) return overlayView!!
+
+            val view = TextView(this@AppBlockerService)
+            view.setTextColor(Color.WHITE)
+            view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14f)
+            view.typeface = Typeface.DEFAULT_BOLD
+            view.setPadding(dpToPx(10), dpToPx(6), dpToPx(10), dpToPx(6))
+            view.background = GradientDrawable().apply {
+                cornerRadius = dpToPx(12).toFloat()
+                setColor(Color.argb(200, 0, 0, 0))
+            }
+
+            val params = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                android.graphics.PixelFormat.TRANSLUCENT
+            )
+            params.gravity = Gravity.TOP or Gravity.START
+            val storedPosition = currentTrackedPackage?.let { storage.getOverlayPosition(it) }
+            params.x = storedPosition?.first ?: dpToPx(OVERLAY_MARGIN_DP)
+            params.y = storedPosition?.second ?: dpToPx(OVERLAY_MARGIN_DP)
+
+            // Make the timer overlay draggable
+            var initialX = 0
+            var initialY = 0
+            var initialTouchX = 0f
+            var initialTouchY = 0f
+
+            view.setOnTouchListener { _, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        initialX = params.x
+                        initialY = params.y
+                        initialTouchX = event.rawX
+                        initialTouchY = event.rawY
+                        true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        params.x = initialX + (event.rawX - initialTouchX).toInt()
+                        params.y = initialY + (event.rawY - initialTouchY).toInt()
+                        windowManager.updateViewLayout(view, params)
+                        true
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        persistOverlayPosition(params.x, params.y)
+                        true
+                    }
+                    else -> false
+                }
+            }
+
+            windowManager.addView(view, params)
+            overlayView = view
+            overlayLayoutParams = params
+            return view
+        }
+
+        @SuppressLint("ClickableViewAccessibility")
+        private fun ensureDebugOverlayView(): TextView {
+            if (debugOverlayView != null) return debugOverlayView!!
+
+            val view = TextView(this@AppBlockerService)
+            view.setTextColor(Color.YELLOW)
+            view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 11f)
+            view.setPadding(dpToPx(8), dpToPx(4), dpToPx(8), dpToPx(4))
+            view.background = GradientDrawable().apply {
+                cornerRadius = dpToPx(8).toFloat()
+                setColor(Color.argb(200, 50, 50, 50))
+            }
+
+            val params = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                android.graphics.PixelFormat.TRANSLUCENT
+            )
+            params.gravity = Gravity.TOP or Gravity.START
+            params.x = dpToPx(OVERLAY_MARGIN_DP)
+            params.y = dpToPx(OVERLAY_MARGIN_DP + 40)
+
+            // Make the overlay draggable
+            var initialX = 0
+            var initialY = 0
+            var initialTouchX = 0f
+            var initialTouchY = 0f
+
+            view.setOnTouchListener { _, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        initialX = params.x
+                        initialY = params.y
+                        initialTouchX = event.rawX
+                        initialTouchY = event.rawY
+                        true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        params.x = initialX + (event.rawX - initialTouchX).toInt()
+                        params.y = initialY + (event.rawY - initialTouchY).toInt()
+                        windowManager.updateViewLayout(view, params)
+                        true
+                    }
+                    else -> false
+                }
+            }
+
+            windowManager.addView(view, params)
+            debugOverlayView = view
+            return view
+        }
+
+        private fun persistOverlayPosition(x: Int, y: Int) {
+            val packageName = currentTrackedPackage ?: return
+            storage.setOverlayPosition(packageName, x, y)
+        }
+
+        private fun removeViewSafely(view: TextView?) {
+            if (view == null) return
+            try {
+                if (view.isAttachedToWindow) {
+                    windowManager.removeView(view)
+                }
+            } catch (_: IllegalArgumentException) {
+                // View already removed or not attached.
+            }
+        }
     }
 
     override fun onInterrupt() {

@@ -230,14 +230,6 @@ class Storage(context: Context) {
         return usedSeconds + virtualSeconds
     }
 
-    fun getUsageMinutesInWindow(blockSet: BlockSet): Double {
-        return getUsageSecondsInWindow(blockSet) / 60.0
-    }
-
-    fun getRemainingMinutes(blockSet: BlockSet): Double {
-        return getRemainingSeconds(blockSet) / 60.0
-    }
-
     fun getRemainingSeconds(blockSet: BlockSet): Int {
         val usedSeconds = getUsageSecondsInWindow(blockSet)
         return computeRemainingSeconds(blockSet.quotaMinutes, usedSeconds)
