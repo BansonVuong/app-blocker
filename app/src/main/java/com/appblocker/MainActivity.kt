@@ -12,11 +12,17 @@ import android.os.Process
 import android.provider.Settings
 import android.text.TextUtils
 import android.view.View
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.appblocker.databinding.ActivityMainBinding
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
+import android.text.InputType
 
 class MainActivity : AppCompatActivity() {
 
@@ -101,6 +107,24 @@ class MainActivity : AppCompatActivity() {
             startActivity(intent)
         }
 
+        binding.buttonOverride.setOnClickListener {
+            val blockSets = storage.getBlockSets()
+            val overrideEligible = blockSets.filter { it.allowOverride }
+            if (overrideEligible.isEmpty()) {
+                Toast.makeText(this, getString(R.string.no_override_block_sets), Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            val hasActiveOverride = overrideEligible.any { storage.isOverrideActive(it) }
+            if (hasActiveOverride) {
+                overrideEligible.forEach { blockSet ->
+                    storage.clearOverride(blockSet.id)
+                }
+                refreshData()
+                return@setOnClickListener
+            }
+            showOverrideFlow()
+        }
+
         setupDebugTools()
     }
 
@@ -166,6 +190,60 @@ class MainActivity : AppCompatActivity() {
 
         binding.textEmpty.visibility = if (blockSets.isEmpty()) View.VISIBLE else View.GONE
         binding.recyclerBlockSets.visibility = if (blockSets.isEmpty()) View.GONE else View.VISIBLE
+
+        val overrideEligible = blockSets.filter { it.allowOverride }
+        val hasActiveOverride = overrideEligible.any { storage.isOverrideActive(it) }
+        binding.buttonOverride.text = if (hasActiveOverride) {
+            getString(R.string.cancel_override)
+        } else {
+            getString(R.string.override)
+        }
+    }
+
+    private fun showOverrideFlow() {
+        val overrideEligible = storage.getBlockSets().filter { it.allowOverride }
+        if (overrideEligible.isEmpty()) {
+            Toast.makeText(this, getString(R.string.no_override_block_sets), Toast.LENGTH_SHORT).show()
+            return
+        }
+        showOverrideMinutesDialog(overrideEligible)
+    }
+
+    private fun showOverrideMinutesDialog(blockSets: List<BlockSet>) {
+        val padding = (16 * resources.displayMetrics.density).toInt()
+        val inputLayout = TextInputLayout(this).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            hint = getString(R.string.override_minutes)
+        }
+        val input = TextInputEditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            hint = getString(R.string.override_minutes_hint)
+        }
+        inputLayout.addView(input)
+        val container = FrameLayout(this).apply {
+            setPadding(padding, padding, padding, 0)
+            addView(inputLayout)
+        }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.override)
+            .setView(container)
+            .setPositiveButton(R.string.override) { _, _ ->
+                val minutes = input.text?.toString()?.trim()?.toIntOrNull()
+                if (minutes == null || minutes <= 0) {
+                    Toast.makeText(this, getString(R.string.enter_override_minutes), Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                blockSets.forEach { blockSet ->
+                    storage.setOverrideMinutes(blockSet.id, minutes)
+                }
+                refreshData()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     private fun checkPermissions() {

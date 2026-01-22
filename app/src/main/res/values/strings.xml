@@ -28,6 +28,15 @@
     <string name="enable_overlay">Enable Floating Timer</string>
     <string name="permissions_required">Permissions Required</string>
     <string name="combined_quota">Combined quota for all apps</string>
+    <string name="allow_override">Allow override</string>
+    <string name="override">Override</string>
+    <string name="cancel_override">Cancel override</string>
+    <string name="override_minutes">Override minutes</string>
+    <string name="override_minutes_hint">Minutes</string>
+    <string name="override_for_block_set">Override "%s"</string>
+    <string name="enter_override_minutes">Please enter override minutes</string>
+    <string name="choose_block_set">Choose block set</string>
+    <string name="no_override_block_sets">No block sets allow overrides</string>
     <string name="debug_overlay">Debug overlay</string>
     <string name="capture_debug_logs">Capture debug logs</string>
     <string name="export_debug_logs">Export debug logs</string>

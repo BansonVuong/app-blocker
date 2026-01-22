@@ -57,6 +57,7 @@ class BlockSetActivity : AppCompatActivity() {
                 binding.editQuota.setText(formatQuotaMinutes(it.quotaMinutes))
                 binding.spinnerWindow.setSelection(WINDOW_OPTIONS.indexOf(it.windowMinutes).coerceAtLeast(0))
                 binding.checkCombinedQuota.isChecked = it.combinedQuota
+                binding.checkAllowOverride.isChecked = it.allowOverride
                 selectedApps = it.apps.toMutableList()
                 binding.buttonDelete.visibility = View.VISIBLE
             }
@@ -139,6 +140,7 @@ class BlockSetActivity : AppCompatActivity() {
         val windowIndex = binding.spinnerWindow.selectedItemPosition
         val window = WINDOW_OPTIONS[windowIndex]
         val combinedQuota = binding.checkCombinedQuota.isChecked
+        val allowOverride = binding.checkAllowOverride.isChecked
 
         val blockSets = storage.getBlockSets()
 
@@ -151,6 +153,7 @@ class BlockSetActivity : AppCompatActivity() {
                     quotaMinutes = quota,
                     windowMinutes = window,
                     combinedQuota = combinedQuota,
+                    allowOverride = allowOverride,
                     apps = selectedApps
                 )
             }
@@ -161,6 +164,7 @@ class BlockSetActivity : AppCompatActivity() {
                 quotaMinutes = quota,
                 windowMinutes = window,
                 combinedQuota = combinedQuota,
+                allowOverride = allowOverride,
                 apps = selectedApps
             )
             blockSets.add(newBlockSet)

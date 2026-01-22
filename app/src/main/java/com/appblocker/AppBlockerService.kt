@@ -37,6 +37,7 @@ class AppBlockerService : AccessibilityService() {
     private var debugOverlayPrefListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
     private var lastBlockedEventTimeMs: Long = 0
     private val snapchatDetector = SnapchatDetector()
+    private var lastForegroundPackage: String? = null
 
     // Local session tracking to enable immediate blocking when timer runs out
     private var sessionStartTimeMs: Long = 0
@@ -111,6 +112,17 @@ class AppBlockerService : AccessibilityService() {
             eventType = event.eventType,
             nowMs = nowMs
         )
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            !isLikelyOverlayPackage(packageName)
+        ) {
+            lastForegroundPackage = effectivePackageName
+        }
+        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            lastForegroundPackage != null &&
+            effectivePackageName != lastForegroundPackage
+        ) {
+            return
+        }
         logDebug("event", buildEventLogMessage(packageName, className))
 
         // Update or remove debug overlay based on current setting.
@@ -152,7 +164,8 @@ class AppBlockerService : AccessibilityService() {
     private fun handleBlockedApp(packageName: String, blockSet: BlockSet, nowMs: Long) {
         lastBlockedEventTimeMs = nowMs
         cancelPendingStop()
-        if (storage.isQuotaExceeded(blockSet)) {
+        val overrideActive = storage.isOverrideActive(blockSet, nowMs)
+        if (storage.isQuotaExceeded(blockSet) && !overrideActive) {
             logDebug("blocked", "quota exceeded for ${blockSet.name}")
             launchBlockedScreen(blockSet.name, blockSet.id, packageName)
             stopTracking()
@@ -202,7 +215,7 @@ class AppBlockerService : AccessibilityService() {
         val isLikelyOverlay = isLikelyOverlayPackage(packageName)
 
         if (!isLikelyOverlay) {
-            // This is a real app that's not blocked - stop tracking
+            // This is a real app that's not blocked - stop tracking immediately
             logDebug("track", "schedule stop due to $packageName (likelyOverlay=$isLikelyOverlay)")
             scheduleStopTracking()
         }
@@ -251,9 +264,10 @@ class AppBlockerService : AccessibilityService() {
 
                         // Calculate remaining time using local tracking for immediate response
                         val localRemainingSeconds = getLocalRemainingSeconds()
+                        val overrideActive = storage.isOverrideActive(updatedBlockSet, nowMs)
 
                         // Block immediately when local timer hits zero
-                        if (localRemainingSeconds <= 0) {
+                        if (!overrideActive && localRemainingSeconds <= 0) {
                             val trackedPackage = currentTrackedPackage ?: ""
                             launchBlockedScreen(updatedBlockSet.name, updatedBlockSet.id, trackedPackage)
                             stopTracking()
@@ -356,8 +370,10 @@ class AppBlockerService : AccessibilityService() {
             updateOverlay(null)
             return
         }
-        val remainingSeconds = getLocalRemainingSeconds()
-        overlayController.updateOverlayWithLocalTracking(blockSet, remainingSeconds)
+        val localRemainingSeconds = getLocalRemainingSeconds()
+        val overrideSeconds = storage.getOverrideRemainingSeconds(blockSet)
+        val displaySeconds = if (overrideSeconds > 0) overrideSeconds else localRemainingSeconds
+        overlayController.updateOverlayWithLocalTracking(blockSet, displaySeconds)
     }
 
     /**
@@ -699,7 +715,12 @@ class AppBlockerService : AccessibilityService() {
                 return
             }
 
-            val remainingSeconds = storage.getRemainingSeconds(blockSet)
+            val overrideSeconds = storage.getOverrideRemainingSeconds(blockSet)
+            val remainingSeconds = if (overrideSeconds > 0) {
+                overrideSeconds
+            } else {
+                storage.getRemainingSeconds(blockSet)
+            }
             val view = ensureOverlayView()
             view.text = formatRemainingTime(remainingSeconds)
             view.setTextColor(ContextCompat.getColor(this@AppBlockerService, R.color.white))

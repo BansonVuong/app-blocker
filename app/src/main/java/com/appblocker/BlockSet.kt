@@ -8,5 +8,6 @@ data class BlockSet(
     var apps: MutableList<String> = mutableListOf(), // package names
     var quotaMinutes: Double = 30.0,
     var windowMinutes: Int = 60, // clock-aligned window: 5, 10, 15, 20, 30, or 60 minutes
-    var combinedQuota: Boolean = true // if true, all apps share the quota
+    var combinedQuota: Boolean = true, // if true, all apps share the quota
+    var allowOverride: Boolean = false
 )

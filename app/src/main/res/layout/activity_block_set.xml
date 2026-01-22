@@ -89,6 +89,13 @@
                 android:checked="true"
                 android:text="@string/combined_quota" />
 
+            <com.google.android.material.checkbox.MaterialCheckBox
+                android:id="@+id/checkAllowOverride"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/allow_override" />
+
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/buttonSelectApps"
                 style="@style/Widget.Material3.Button.OutlinedButton"

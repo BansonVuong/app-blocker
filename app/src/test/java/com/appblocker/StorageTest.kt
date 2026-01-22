@@ -110,4 +110,18 @@ class StorageTest {
         assertEquals(120 to 240, storage.getOverlayPosition("com.example.app"))
         assertEquals(5 to 10, storage.getOverlayPosition("com.example.other"))
     }
+
+    @Test
+    fun overrideStateTracksRemainingTime() {
+        val storage = Storage(context)
+        val blockSet = BlockSet(name = "Social", allowOverride = true)
+        val nowMs = 1_000L
+
+        storage.setOverrideMinutes(blockSet.id, 5, nowMs)
+
+        assertTrue(storage.isOverrideActive(blockSet, nowMs))
+        assertEquals(300, storage.getOverrideRemainingSeconds(blockSet, nowMs))
+        assertFalse(storage.isOverrideActive(blockSet, nowMs + 301_000L))
+        assertEquals(0, storage.getOverrideRemainingSeconds(blockSet, nowMs + 301_000L))
+    }
 }

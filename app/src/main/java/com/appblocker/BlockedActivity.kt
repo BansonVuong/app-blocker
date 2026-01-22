@@ -99,6 +99,11 @@ class BlockedActivity : AppCompatActivity() {
             return
         }
 
+        if (storage.isOverrideActive(blockSet)) {
+            finish()
+            return
+        }
+
         if (!storage.isQuotaExceeded(blockSet)) {
             finish()
             return

@@ -75,6 +75,7 @@ class Storage(context: Context) {
         private const val KEY_OVERLAY_X_PREFIX = "overlay_x_"
         private const val KEY_OVERLAY_Y_PREFIX = "overlay_y_"
         private const val KEY_VIRTUAL_SESSIONS_PREFIX = "virtual_sessions_"
+        private const val KEY_OVERRIDE_END_PREFIX = "override_end_"
         private const val OVERLAY_POS_UNSET = Int.MIN_VALUE
         private const val VIRTUAL_SESSION_MAX_AGE_MS = 7L * 24 * 60 * 60 * 1000
     }
@@ -243,6 +244,50 @@ class Storage(context: Context) {
 
     fun isQuotaExceeded(blockSet: BlockSet): Boolean {
         return getRemainingSeconds(blockSet) <= 0
+    }
+
+    fun setOverrideMinutes(
+        blockSetId: String,
+        minutes: Int,
+        nowMs: Long = System.currentTimeMillis()
+    ) {
+        val durationMs = minutes * 60 * 1000L
+        val endMs = nowMs + durationMs
+        prefs.edit().putLong(KEY_OVERRIDE_END_PREFIX + blockSetId, endMs).apply()
+    }
+
+    fun clearOverride(blockSetId: String) {
+        prefs.edit().remove(KEY_OVERRIDE_END_PREFIX + blockSetId).apply()
+    }
+
+    fun isOverrideActive(
+        blockSet: BlockSet,
+        nowMs: Long = System.currentTimeMillis()
+    ): Boolean {
+        if (!blockSet.allowOverride) return false
+        val endMs = prefs.getLong(KEY_OVERRIDE_END_PREFIX + blockSet.id, 0L)
+        if (endMs <= nowMs) {
+            if (endMs > 0L) {
+                clearOverride(blockSet.id)
+            }
+            return false
+        }
+        return true
+    }
+
+    fun getOverrideRemainingSeconds(
+        blockSet: BlockSet,
+        nowMs: Long = System.currentTimeMillis()
+    ): Int {
+        if (!blockSet.allowOverride) return 0
+        val endMs = prefs.getLong(KEY_OVERRIDE_END_PREFIX + blockSet.id, 0L)
+        if (endMs <= nowMs) {
+            if (endMs > 0L) {
+                clearOverride(blockSet.id)
+            }
+            return 0
+        }
+        return ((endMs - nowMs) / 1000).toInt()
     }
 
     fun getUsageSecondsLastWeek(packageNames: Set<String>): Map<String, Int> {

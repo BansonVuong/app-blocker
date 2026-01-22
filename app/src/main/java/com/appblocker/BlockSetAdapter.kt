@@ -44,6 +44,8 @@ class BlockSetAdapter(
             binding.textApps.text = binding.root.context.getString(R.string.apps_selected, appCount)
 
             val remainingSeconds = storage.getRemainingSeconds(blockSet)
+            val overrideSeconds = storage.getOverrideRemainingSeconds(blockSet)
+            val displaySeconds = if (overrideSeconds > 0) overrideSeconds else remainingSeconds
             val totalSeconds = (blockSet.quotaMinutes * 60).roundToInt()
             val usedSeconds = totalSeconds - remainingSeconds
             val progress = if (totalSeconds > 0) (usedSeconds * 100) / totalSeconds else 0
@@ -51,8 +53,8 @@ class BlockSetAdapter(
             binding.progressQuota.progress = progress
 
             // Format as MM:SS
-            val minutes = remainingSeconds / 60
-            val seconds = remainingSeconds % 60
+            val minutes = displaySeconds / 60
+            val seconds = displaySeconds % 60
             binding.textRemaining.text = binding.root.context.getString(
                 R.string.time_left,
                 minutes,
@@ -61,8 +63,8 @@ class BlockSetAdapter(
 
             // Color based on remaining time (in seconds)
             val color = when {
-                remainingSeconds <= 0 -> binding.root.context.getColor(R.color.red)
-                remainingSeconds <= 60 -> binding.root.context.getColor(R.color.accent)  // Last minute
+                displaySeconds <= 0 -> binding.root.context.getColor(R.color.red)
+                displaySeconds <= 60 -> binding.root.context.getColor(R.color.accent)  // Last minute
                 else -> binding.root.context.getColor(R.color.green)
             }
             binding.progressQuota.setIndicatorColor(color)
