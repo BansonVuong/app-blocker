@@ -217,10 +217,10 @@ class MainActivity : AppCompatActivity() {
                 ViewGroup.LayoutParams.WRAP_CONTENT
             )
             hint = getString(R.string.override_minutes)
+            placeholderText = getString(R.string.override_minutes_hint)
         }
         val input = TextInputEditText(this).apply {
             inputType = InputType.TYPE_CLASS_NUMBER
-            hint = getString(R.string.override_minutes_hint)
         }
         inputLayout.addView(input)
         val container = FrameLayout(this).apply {
