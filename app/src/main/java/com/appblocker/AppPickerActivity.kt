@@ -116,7 +116,8 @@ class AppPickerActivity : AppCompatActivity() {
             )
             SortMode.ALPHABETICAL -> allApps.sortedBy { it.appName.lowercase() }
         }
-        adapter.setApps(insertSnapchatVirtuals(sorted))
+        val withSnapchat = insertSnapchatVirtuals(sorted)
+        adapter.setApps(insertInstagramVirtuals(withSnapchat))
     }
 
     private fun insertSnapchatVirtuals(apps: List<AppInfo>): List<AppInfo> {
@@ -141,6 +142,23 @@ class AppPickerActivity : AppCompatActivity() {
         )
         mutable.add(snapchatIndex + 1, stories)
         mutable.add(snapchatIndex + 2, spotlight)
+        return mutable
+    }
+
+    private fun insertInstagramVirtuals(apps: List<AppInfo>): List<AppInfo> {
+        val mutable = apps.toMutableList()
+        val instagramIndex = mutable.indexOfFirst { it.packageName == AppTargets.INSTAGRAM_PACKAGE }
+        if (instagramIndex < 0) return mutable
+
+        val instagramApp = mutable[instagramIndex]
+        val reels = instagramApp.copy(
+            packageName = AppTargets.INSTAGRAM_REELS,
+            appName = "Reels",
+            usageSecondsLastWeek = 0,
+            isVirtual = true,
+            parentPackage = AppTargets.INSTAGRAM_PACKAGE
+        )
+        mutable.add(instagramIndex + 1, reels)
         return mutable
     }
 

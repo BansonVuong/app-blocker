@@ -37,6 +37,7 @@ class AppBlockerService : AccessibilityService() {
     private var debugOverlayPrefListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
     private var lastBlockedEventTimeMs: Long = 0
     private val snapchatDetector = SnapchatDetector()
+    private val instagramDetector = InstagramDetector()
     private var lastForegroundPackage: String? = null
 
     // Local session tracking to enable immediate blocking when timer runs out
@@ -53,6 +54,7 @@ class AppBlockerService : AccessibilityService() {
         private const val OVERLAY_MARGIN_DP = 12
         private const val SNAPCHAT_DETECTION_INTERVAL_MS = 400L
         private const val SNAPCHAT_HEADER_MAX_Y_DP = 260
+        private const val INSTAGRAM_DETECTION_INTERVAL_MS = 400L
         private const val LOG_TAG = "AppBlockerOverlay"
     }
 
@@ -115,11 +117,11 @@ class AppBlockerService : AccessibilityService() {
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
             !isLikelyOverlayPackage(packageName)
         ) {
-            lastForegroundPackage = effectivePackageName
+            lastForegroundPackage = packageName
         }
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
             lastForegroundPackage != null &&
-            effectivePackageName != lastForegroundPackage
+            packageName != lastForegroundPackage
         ) {
             return
         }
@@ -447,23 +449,52 @@ class AppBlockerService : AccessibilityService() {
     ): String {
         val inAppBrowserPackage = resolveInAppBrowserPackage(packageName, className)
         if (inAppBrowserPackage != null) return inAppBrowserPackage
-        if (packageName != AppTargets.SNAPCHAT_PACKAGE) return packageName
-        if (storage.getBlockSetForApp(AppTargets.SNAPCHAT_PACKAGE) != null) {
-            return AppTargets.SNAPCHAT_PACKAGE
-        }
-        val hasStoriesBlock = storage.getBlockSetForApp(AppTargets.SNAPCHAT_STORIES) != null
-        val hasSpotlightBlock = storage.getBlockSetForApp(AppTargets.SNAPCHAT_SPOTLIGHT) != null
-        if (!hasStoriesBlock && !hasSpotlightBlock) {
-            return AppTargets.SNAPCHAT_PACKAGE
-        }
+        if (packageName == AppTargets.SNAPCHAT_PACKAGE) {
+            if (storage.getBlockSetForApp(AppTargets.SNAPCHAT_PACKAGE) != null) {
+                return AppTargets.SNAPCHAT_PACKAGE
+            }
+            val hasStoriesBlock = storage.getBlockSetForApp(AppTargets.SNAPCHAT_STORIES) != null
+            val hasSpotlightBlock = storage.getBlockSetForApp(AppTargets.SNAPCHAT_SPOTLIGHT) != null
+            if (!hasStoriesBlock && !hasSpotlightBlock) {
+                return AppTargets.SNAPCHAT_PACKAGE
+            }
 
-        val tab = snapchatDetector.detect(eventType, nowMs, rootInActiveWindow)
-        return when (tab) {
-            SnapchatTab.STORIES ->
-                if (hasStoriesBlock) AppTargets.SNAPCHAT_STORIES else AppTargets.SNAPCHAT_PACKAGE
-            SnapchatTab.SPOTLIGHT ->
-                if (hasSpotlightBlock) AppTargets.SNAPCHAT_SPOTLIGHT else AppTargets.SNAPCHAT_PACKAGE
-            else -> AppTargets.SNAPCHAT_PACKAGE
+            val tab = snapchatDetector.detect(eventType, nowMs, rootInActiveWindow)
+            return when (tab) {
+                SnapchatTab.STORIES ->
+                    if (hasStoriesBlock) AppTargets.SNAPCHAT_STORIES else AppTargets.SNAPCHAT_PACKAGE
+                SnapchatTab.SPOTLIGHT ->
+                    if (hasSpotlightBlock) AppTargets.SNAPCHAT_SPOTLIGHT else AppTargets.SNAPCHAT_PACKAGE
+                else -> AppTargets.SNAPCHAT_PACKAGE
+            }
+        }
+        if (packageName == AppTargets.INSTAGRAM_PACKAGE) {
+            return resolveInstagramPackage(packageName, eventType, nowMs)
+        }
+        return packageName
+    }
+
+    /**
+     * Resolve Instagram Reels tab to a virtual package if a block set exists.
+     */
+    private fun resolveInstagramPackage(
+        packageName: String,
+        eventType: Int,
+        nowMs: Long
+    ): String {
+        if (packageName != AppTargets.INSTAGRAM_PACKAGE) return packageName
+        if (storage.getBlockSetForApp(AppTargets.INSTAGRAM_PACKAGE) != null) {
+            return AppTargets.INSTAGRAM_PACKAGE
+        }
+        val hasReelsBlock = storage.getBlockSetForApp(AppTargets.INSTAGRAM_REELS) != null
+        if (!hasReelsBlock) {
+            return AppTargets.INSTAGRAM_PACKAGE
+        }
+        val tab = instagramDetector.detect(eventType, nowMs, rootInActiveWindow)
+        return if (tab == InstagramTab.REELS) {
+            AppTargets.INSTAGRAM_REELS
+        } else {
+            AppTargets.INSTAGRAM_PACKAGE
         }
     }
 
@@ -562,10 +593,70 @@ class AppBlockerService : AccessibilityService() {
         }
     }
 
+    private inner class InstagramDetector {
+        private var lastDetectionMs: Long = 0
+        private var lastTab: InstagramTab = InstagramTab.UNKNOWN
+
+        fun detect(
+            eventType: Int,
+            nowMs: Long,
+            root: android.view.accessibility.AccessibilityNodeInfo?
+        ): InstagramTab {
+            val shouldUpdate = eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+                eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ||
+                eventType == AccessibilityEvent.TYPE_VIEW_CLICKED
+            if (!shouldUpdate) return lastTab
+            if (nowMs - lastDetectionMs < INSTAGRAM_DETECTION_INTERVAL_MS) {
+                return lastTab
+            }
+
+            lastDetectionMs = nowMs
+            val rootNode = root ?: return lastTab
+            var selectedReels = false
+            var foundClipsTab = false
+
+            val queue: ArrayDeque<android.view.accessibility.AccessibilityNodeInfo> = ArrayDeque()
+            queue.add(rootNode)
+            while (queue.isNotEmpty()) {
+                val node = queue.removeFirst()
+                val viewId = node.viewIdResourceName.orEmpty()
+                val contentDesc = node.contentDescription?.toString()?.trim().orEmpty()
+                val text = node.text?.toString()?.trim().orEmpty()
+
+                if (viewId == "com.instagram.android:id/clips_tab") {
+                    foundClipsTab = true
+                    selectedReels = node.isSelected || node.isChecked
+                    if (selectedReels) break
+                }
+
+                if (!foundClipsTab &&
+                    (node.isSelected || node.isChecked) &&
+                    (contentDesc.equals("Reels", ignoreCase = true) ||
+                        text.equals("Reels", ignoreCase = true))
+                ) {
+                    selectedReels = true
+                    break
+                }
+
+                for (i in 0 until node.childCount) {
+                    node.getChild(i)?.let { queue.add(it) }
+                }
+            }
+
+            lastTab = if (selectedReels) InstagramTab.REELS else InstagramTab.UNKNOWN
+            return lastTab
+        }
+    }
+
     private enum class SnapchatTab {
         STORIES,
         SPOTLIGHT,
         CHAT,
+        UNKNOWN
+    }
+
+    private enum class InstagramTab {
+        REELS,
         UNKNOWN
     }
 

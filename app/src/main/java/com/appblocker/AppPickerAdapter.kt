@@ -54,7 +54,11 @@ class AppPickerAdapter(
             binding.textAppName.text = app.appName
             val context = binding.root.context
             binding.textUsageTime.text = if (app.isVirtual) {
-                context.getString(R.string.snapchat_tab_label)
+                when (app.parentPackage) {
+                    AppTargets.SNAPCHAT_PACKAGE -> context.getString(R.string.snapchat_tab_label)
+                    AppTargets.INSTAGRAM_PACKAGE -> context.getString(R.string.instagram_reels_label)
+                    else -> context.getString(R.string.snapchat_tab_label)
+                }
             } else {
                 formatUsageTime(context, app.usageSecondsLastWeek)
             }

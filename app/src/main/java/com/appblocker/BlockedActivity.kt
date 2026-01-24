@@ -74,7 +74,8 @@ class BlockedActivity : AppCompatActivity() {
     private fun goHome() {
         val returnPackage = intent.getStringExtra(EXTRA_RETURN_PACKAGE)
         if (returnPackage != null && AppTargets.isVirtualPackage(returnPackage)) {
-            val launchIntent = packageManager.getLaunchIntentForPackage(AppTargets.SNAPCHAT_PACKAGE)
+            val parentPackage = AppTargets.getParentPackage(returnPackage)
+            val launchIntent = parentPackage?.let { packageManager.getLaunchIntentForPackage(it) }
             if (launchIntent != null) {
                 launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 startActivity(launchIntent)
