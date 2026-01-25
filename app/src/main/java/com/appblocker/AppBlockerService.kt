@@ -532,6 +532,7 @@ class AppBlockerService : AccessibilityService() {
             var foundChatHeader = false
             var selectedStories = false
             var selectedChat = false
+            var foundChatUi = false
 
             val queue: ArrayDeque<android.view.accessibility.AccessibilityNodeInfo> = ArrayDeque()
             queue.add(rootNode)
@@ -541,6 +542,10 @@ class AppBlockerService : AccessibilityService() {
                 if (viewId == "com.snapchat.android:id/spotlight_container") {
                     lastTab = SnapchatTab.SPOTLIGHT
                     return lastTab
+                }
+
+                if (!foundChatUi && isChatUiIndicator(viewId)) {
+                    foundChatUi = true
                 }
 
                 val text = node.text?.toString()?.trim()
@@ -583,6 +588,7 @@ class AppBlockerService : AccessibilityService() {
             }
 
             lastTab = when {
+                foundChatUi -> SnapchatTab.CHAT
                 selectedStories -> SnapchatTab.STORIES
                 selectedChat -> SnapchatTab.CHAT
                 foundStoriesHeader && !foundChatHeader -> SnapchatTab.STORIES
@@ -590,6 +596,14 @@ class AppBlockerService : AccessibilityService() {
                 else -> SnapchatTab.UNKNOWN
             }
             return lastTab
+        }
+
+        private fun isChatUiIndicator(viewId: String): Boolean {
+            if (viewId.isEmpty()) return false
+            return viewId.contains("ff_item") ||
+                viewId.contains("list-picker-pill") ||
+                viewId.contains("feed_chat_button") ||
+                viewId.contains("feed_pinned_convo_button")
         }
     }
 
