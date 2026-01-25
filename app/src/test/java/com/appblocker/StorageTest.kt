@@ -124,4 +124,28 @@ class StorageTest {
         assertFalse(storage.isOverrideActive(blockSet, nowMs + 301_000L))
         assertEquals(0, storage.getOverrideRemainingSeconds(blockSet, nowMs + 301_000L))
     }
+
+    @Test
+    fun overrideAuthSettingsPersist() {
+        val storage = Storage(context)
+
+        assertEquals(Storage.OVERRIDE_AUTH_NONE, storage.getOverrideAuthMode())
+        storage.setOverrideAuthMode(Storage.OVERRIDE_AUTH_PASSWORD)
+        storage.setOverridePassword("secret")
+
+        assertEquals(Storage.OVERRIDE_AUTH_PASSWORD, storage.getOverrideAuthMode())
+        assertEquals("secret", storage.getOverridePassword())
+    }
+
+    @Test
+    fun settingsAuthSettingsPersist() {
+        val storage = Storage(context)
+
+        assertEquals(Storage.OVERRIDE_AUTH_NONE, storage.getSettingsAuthMode())
+        storage.setSettingsAuthMode(Storage.OVERRIDE_AUTH_PASSWORD)
+        storage.setSettingsPassword("admin")
+
+        assertEquals(Storage.OVERRIDE_AUTH_PASSWORD, storage.getSettingsAuthMode())
+        assertEquals("admin", storage.getSettingsPassword())
+    }
 }

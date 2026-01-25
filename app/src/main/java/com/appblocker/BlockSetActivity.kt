@@ -79,6 +79,7 @@ class BlockSetActivity : AppCompatActivity() {
         binding.spinnerWindow.setSelection(5) // Default to 1 hour
     }
 
+
     private fun setupClickListeners() {
         binding.toolbar.setNavigationOnClickListener {
             finish()

@@ -14,9 +14,13 @@ import android.text.TextUtils
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.view.Menu
+import android.view.MenuItem
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
+import java.security.SecureRandom
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.appblocker.databinding.ActivityMainBinding
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -31,6 +35,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var adapter: BlockSetAdapter
     private val handler = Handler(Looper.getMainLooper())
     private var refreshRunnable: Runnable? = null
+    private val secureRandom = SecureRandom()
 
     private val blockSetLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -42,6 +47,9 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        setSupportActionBar(binding.toolbar)
+        binding.toolbar.overflowIcon?.setTint(ContextCompat.getColor(this, android.R.color.white))
 
         storage = App.instance.storage
 
@@ -177,11 +185,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openBlockSetEditor(blockSet: BlockSet?) {
-        val intent = Intent(this, BlockSetActivity::class.java)
-        blockSet?.let {
-            intent.putExtra(BlockSetActivity.EXTRA_BLOCK_SET_ID, it.id)
+        showSettingsAccessFlow {
+            val intent = Intent(this, BlockSetActivity::class.java)
+            blockSet?.let {
+                intent.putExtra(BlockSetActivity.EXTRA_BLOCK_SET_ID, it.id)
+            }
+            blockSetLauncher.launch(intent)
         }
-        blockSetLauncher.launch(intent)
     }
 
     private fun refreshData() {
@@ -206,7 +216,199 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, getString(R.string.no_override_block_sets), Toast.LENGTH_SHORT).show()
             return
         }
-        showOverrideMinutesDialog(overrideEligible)
+        val authMode = storage.getOverrideAuthMode()
+        if (authMode == Storage.OVERRIDE_AUTH_NONE) {
+            showOverrideMinutesDialog(overrideEligible)
+            return
+        }
+        if (authMode == Storage.OVERRIDE_AUTH_PASSWORD) {
+            showOverridePasswordDialog(overrideEligible)
+            return
+        }
+        showRandomOverridePasswordDialog(overrideEligible, authMode)
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menuInflater.inflate(R.menu.main_menu, menu)
+        binding.toolbar.overflowIcon?.setTint(ContextCompat.getColor(this, android.R.color.white))
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_settings -> {
+                showSettingsAccessFlow {
+                    startActivity(Intent(this, SettingsActivity::class.java))
+                }
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
+        }
+    }
+
+    private fun showOverridePasswordDialog(blockSets: List<BlockSet>) {
+        val padding = (16 * resources.displayMetrics.density).toInt()
+        val inputLayout = TextInputLayout(this).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            hint = getString(R.string.override_password_label)
+        }
+        val input = TextInputEditText(this).apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        inputLayout.addView(input)
+        val container = FrameLayout(this).apply {
+            setPadding(padding, padding, padding, 0)
+            addView(inputLayout)
+        }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.override)
+            .setView(container)
+            .setPositiveButton(R.string.override) { _, _ ->
+                val entered = input.text?.toString() ?: ""
+                val stored = storage.getOverridePassword()
+                if (entered != stored) {
+                    Toast.makeText(this, getString(R.string.override_password_incorrect), Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                showOverrideMinutesDialog(blockSets)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showRandomOverridePasswordDialog(blockSets: List<BlockSet>, authMode: Int) {
+        val randomPassword = generateRandomPassword(authMode)
+        val padding = (16 * resources.displayMetrics.density).toInt()
+        val inputLayout = TextInputLayout(this).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            hint = getString(R.string.override_password_label)
+        }
+        val input = TextInputEditText(this).apply {
+            inputType = InputType.TYPE_CLASS_TEXT
+        }
+        inputLayout.addView(input)
+        val container = FrameLayout(this).apply {
+            setPadding(padding, padding, padding, 0)
+            addView(inputLayout)
+        }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.override)
+            .setMessage(getString(R.string.override_random_password_message, randomPassword))
+            .setView(container)
+            .setPositiveButton(R.string.override) { _, _ ->
+                val entered = input.text?.toString() ?: ""
+                if (entered != randomPassword) {
+                    Toast.makeText(this, getString(R.string.override_password_incorrect), Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                showOverrideMinutesDialog(blockSets)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showSettingsAccessFlow(onAuthorized: () -> Unit) {
+        val authMode = storage.getSettingsAuthMode()
+        if (authMode == Storage.OVERRIDE_AUTH_NONE) {
+            onAuthorized()
+            return
+        }
+        if (authMode == Storage.OVERRIDE_AUTH_PASSWORD) {
+            showSettingsPasswordDialog(onAuthorized)
+            return
+        }
+        showRandomSettingsPasswordDialog(onAuthorized, authMode)
+    }
+
+    private fun showSettingsPasswordDialog(onAuthorized: () -> Unit) {
+        val padding = (16 * resources.displayMetrics.density).toInt()
+        val inputLayout = TextInputLayout(this).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            hint = getString(R.string.settings_password_label)
+        }
+        val input = TextInputEditText(this).apply {
+            inputType = InputType.TYPE_CLASS_TEXT
+        }
+        inputLayout.addView(input)
+        val container = FrameLayout(this).apply {
+            setPadding(padding, padding, padding, 0)
+            addView(inputLayout)
+        }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.settings_access_title)
+            .setView(container)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val entered = input.text?.toString() ?: ""
+                val stored = storage.getSettingsPassword()
+                if (entered != stored) {
+                    Toast.makeText(this, getString(R.string.settings_password_incorrect), Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                onAuthorized()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showRandomSettingsPasswordDialog(onAuthorized: () -> Unit, authMode: Int) {
+        val randomPassword = generateRandomPassword(authMode)
+        val padding = (16 * resources.displayMetrics.density).toInt()
+        val inputLayout = TextInputLayout(this).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            hint = getString(R.string.settings_password_label)
+        }
+        val input = TextInputEditText(this).apply {
+            inputType = InputType.TYPE_CLASS_TEXT
+        }
+        inputLayout.addView(input)
+        val container = FrameLayout(this).apply {
+            setPadding(padding, padding, padding, 0)
+            addView(inputLayout)
+        }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.settings_access_title)
+            .setMessage(getString(R.string.settings_random_password_message, randomPassword))
+            .setView(container)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val entered = input.text?.toString() ?: ""
+                if (entered != randomPassword) {
+                    Toast.makeText(this, getString(R.string.settings_password_incorrect), Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                onAuthorized()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun generateRandomPassword(mode: Int): String {
+        val length = when (mode) {
+            Storage.OVERRIDE_AUTH_RANDOM_64 -> 64
+            Storage.OVERRIDE_AUTH_RANDOM_128 -> 128
+            else -> 32
+        }
+        val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+        val chars = CharArray(length)
+        for (i in 0 until length) {
+            chars[i] = alphabet[secureRandom.nextInt(alphabet.length)]
+        }
+        return String(chars)
     }
 
     private fun showOverrideMinutesDialog(blockSets: List<BlockSet>) {

@@ -50,6 +50,22 @@
     <string name="sort_by">Sort by</string>
     <string name="sort_time_spent">Time spent</string>
     <string name="sort_alphabetical">Alphabetical</string>
+    <string name="settings">Settings</string>
+    <string name="override_auth_mode_label">Override requirement</string>
+    <string name="override_auth_mode_none">No password required for override</string>
+    <string name="override_auth_mode_password">Password required for override</string>
+    <string name="override_auth_mode_random_32">Random 32 character password required for override</string>
+    <string name="override_auth_mode_random_64">Random 64 character password required for override</string>
+    <string name="override_auth_mode_random_128">Random 128 character password required for override</string>
+    <string name="override_password_label">Override password</string>
+    <string name="override_password_incorrect">Incorrect override password</string>
+    <string name="override_random_password_message">Enter this password to continue:\n%s</string>
+    <string name="settings_access_header">Settings access</string>
+    <string name="settings_auth_mode_label">Settings access requirement</string>
+    <string name="settings_password_label">Settings password</string>
+    <string name="settings_access_title">Settings access</string>
+    <string name="settings_random_password_message">Enter this password to access settings:\n%s</string>
+    <string name="settings_password_incorrect">Incorrect settings password</string>
 
     <string-array name="window_labels">
         <item>5 minutes</item>

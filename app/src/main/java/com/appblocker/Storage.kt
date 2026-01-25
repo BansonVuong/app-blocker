@@ -76,8 +76,18 @@ class Storage(context: Context) {
         private const val KEY_OVERLAY_Y_PREFIX = "overlay_y_"
         private const val KEY_VIRTUAL_SESSIONS_PREFIX = "virtual_sessions_"
         private const val KEY_OVERRIDE_END_PREFIX = "override_end_"
+        private const val KEY_OVERRIDE_AUTH_MODE = "override_auth_mode"
+        private const val KEY_OVERRIDE_PASSWORD = "override_password"
+        private const val KEY_SETTINGS_AUTH_MODE = "settings_auth_mode"
+        private const val KEY_SETTINGS_PASSWORD = "settings_password"
         private const val OVERLAY_POS_UNSET = Int.MIN_VALUE
         private const val VIRTUAL_SESSION_MAX_AGE_MS = 7L * 24 * 60 * 60 * 1000
+
+        const val OVERRIDE_AUTH_NONE = 0
+        const val OVERRIDE_AUTH_PASSWORD = 1
+        const val OVERRIDE_AUTH_RANDOM_32 = 2
+        const val OVERRIDE_AUTH_RANDOM_64 = 3
+        const val OVERRIDE_AUTH_RANDOM_128 = 4
     }
 
     // ===== Debug-only prefs (easy to remove) =====
@@ -254,6 +264,38 @@ class Storage(context: Context) {
         val durationMs = minutes * 60 * 1000L
         val endMs = nowMs + durationMs
         prefs.edit().putLong(KEY_OVERRIDE_END_PREFIX + blockSetId, endMs).apply()
+    }
+
+    fun getOverrideAuthMode(): Int {
+        return prefs.getInt(KEY_OVERRIDE_AUTH_MODE, OVERRIDE_AUTH_NONE)
+    }
+
+    fun setOverrideAuthMode(mode: Int) {
+        prefs.edit().putInt(KEY_OVERRIDE_AUTH_MODE, mode).apply()
+    }
+
+    fun getOverridePassword(): String {
+        return prefs.getString(KEY_OVERRIDE_PASSWORD, "") ?: ""
+    }
+
+    fun setOverridePassword(password: String) {
+        prefs.edit().putString(KEY_OVERRIDE_PASSWORD, password).apply()
+    }
+
+    fun getSettingsAuthMode(): Int {
+        return prefs.getInt(KEY_SETTINGS_AUTH_MODE, OVERRIDE_AUTH_NONE)
+    }
+
+    fun setSettingsAuthMode(mode: Int) {
+        prefs.edit().putInt(KEY_SETTINGS_AUTH_MODE, mode).apply()
+    }
+
+    fun getSettingsPassword(): String {
+        return prefs.getString(KEY_SETTINGS_PASSWORD, "") ?: ""
+    }
+
+    fun setSettingsPassword(password: String) {
+        prefs.edit().putString(KEY_SETTINGS_PASSWORD, password).apply()
     }
 
     fun clearOverride(blockSetId: String) {
