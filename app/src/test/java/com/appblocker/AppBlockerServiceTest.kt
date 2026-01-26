@@ -2,7 +2,9 @@ package com.appblocker
 
 import android.app.Application
 import android.content.Intent
+import android.graphics.Rect
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -58,6 +60,46 @@ class AppBlockerServiceTest {
         val field = instance.javaClass.getDeclaredField(fieldName)
         field.isAccessible = true
         return field.get(instance)
+    }
+
+    private fun buildNode(
+        viewId: String? = null,
+        text: String? = null,
+        bounds: Rect? = null
+    ): AccessibilityNodeInfo {
+        val node = AccessibilityNodeInfo.obtain()
+        if (viewId != null) {
+            node.viewIdResourceName = viewId
+        }
+        if (text != null) {
+            node.text = text
+        }
+        if (bounds != null) {
+            node.setBoundsInScreen(bounds)
+        }
+        return node
+    }
+
+    private fun detectSnapchatTab(
+        service: AppBlockerService,
+        eventType: Int,
+        nowMs: Long,
+        root: AccessibilityNodeInfo
+    ): String {
+        val detector = getPrivateField(service, "snapchatDetector")
+        val method = detector!!.javaClass.getDeclaredMethod(
+            "detect",
+            Int::class.javaPrimitiveType,
+            Long::class.javaPrimitiveType,
+            AccessibilityNodeInfo::class.java
+        )
+        method.isAccessible = true
+        val result = method.invoke(detector, eventType, nowMs, root)
+        return result.toString()
+    }
+
+    private fun addChild(parent: AccessibilityNodeInfo, child: AccessibilityNodeInfo) {
+        Shadows.shadowOf(parent).addChild(child)
     }
 
     @Test
@@ -203,6 +245,56 @@ class AppBlockerServiceTest {
 
         // Should still be tracking the blocked app
         assertEquals("com.instagram.android", trackedPackage)
+    }
+
+    // ==================== Snapchat Detection Tests ====================
+
+    @Test
+    fun snapchatDetectorTreatsMemoriesAsUnknownEvenWithStoriesHeader() {
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        val root = buildNode()
+        val headerBounds = Rect(0, 0, 200, 100)
+        val storiesHeader = buildNode(
+            viewId = "com.snapchat.android:id/0_resource_name_obfuscated",
+            text = "Stories",
+            bounds = headerBounds
+        )
+        val memoriesGrid = buildNode(viewId = "com.snapchat.android:id/memories_grid")
+        addChild(root, storiesHeader)
+        addChild(root, memoriesGrid)
+
+        val tab = detectSnapchatTab(
+            service,
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
+            1000L,
+            root
+        )
+
+        assertEquals("UNKNOWN", tab)
+    }
+
+    @Test
+    fun snapchatDetectorDetectsStoriesWhenStoryContentPresent() {
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        val root = buildNode()
+        val headerBounds = Rect(0, 0, 200, 100)
+        val storiesHeader = buildNode(
+            viewId = "com.snapchat.android:id/0_resource_name_obfuscated",
+            text = "Stories",
+            bounds = headerBounds
+        )
+        val storyCard = buildNode(viewId = "com.snapchat.android:id/friend_card_frame")
+        addChild(root, storiesHeader)
+        addChild(root, storyCard)
+
+        val tab = detectSnapchatTab(
+            service,
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
+            1000L,
+            root
+        )
+
+        assertEquals("STORIES", tab)
     }
 
     @Test

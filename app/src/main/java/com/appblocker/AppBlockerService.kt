@@ -562,6 +562,8 @@ class AppBlockerService : AccessibilityService() {
             var selectedStories = false
             var selectedChat = false
             var foundChatUi = false
+            var foundStoriesContent = false
+            var foundMemories = false
 
             val queue: ArrayDeque<android.view.accessibility.AccessibilityNodeInfo> = ArrayDeque()
             queue.add(rootNode)
@@ -575,6 +577,12 @@ class AppBlockerService : AccessibilityService() {
 
                 if (!foundChatUi && isChatUiIndicator(viewId)) {
                     foundChatUi = true
+                }
+                if (!foundStoriesContent && isStoriesContentIndicator(viewId, node)) {
+                    foundStoriesContent = true
+                }
+                if (!foundMemories && isMemoriesIndicator(viewId, node)) {
+                    foundMemories = true
                 }
 
                 val text = node.text?.toString()?.trim()
@@ -617,10 +625,11 @@ class AppBlockerService : AccessibilityService() {
             }
 
             lastTab = when {
+                foundMemories -> SnapchatTab.UNKNOWN
                 foundChatUi -> SnapchatTab.CHAT
                 selectedStories -> SnapchatTab.STORIES
                 selectedChat -> SnapchatTab.CHAT
-                foundStoriesHeader && !foundChatHeader -> SnapchatTab.STORIES
+                foundStoriesHeader && !foundChatHeader && foundStoriesContent -> SnapchatTab.STORIES
                 foundChatHeader && !foundStoriesHeader -> SnapchatTab.CHAT
                 else -> SnapchatTab.UNKNOWN
             }
@@ -633,6 +642,24 @@ class AppBlockerService : AccessibilityService() {
                 viewId.contains("list-picker-pill") ||
                 viewId.contains("feed_chat_button") ||
                 viewId.contains("feed_pinned_convo_button")
+        }
+
+        private fun isStoriesContentIndicator(
+            viewId: String,
+            node: android.view.accessibility.AccessibilityNodeInfo
+        ): Boolean {
+            if (viewId.contains("friend_card_frame")) return true
+            val text = node.text?.toString()?.trim() ?: return false
+            return text == "friend_story_circle_thumbnail"
+        }
+
+        private fun isMemoriesIndicator(
+            viewId: String,
+            node: android.view.accessibility.AccessibilityNodeInfo
+        ): Boolean {
+            if (viewId.contains("memories_grid")) return true
+            val text = node.text?.toString()?.trim() ?: return false
+            return text == "Memories"
         }
     }
 
