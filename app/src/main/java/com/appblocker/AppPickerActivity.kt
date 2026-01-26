@@ -35,7 +35,7 @@ class AppPickerActivity : AppCompatActivity() {
 
     private fun setupRecyclerView(preSelectedApps: List<String>) {
         adapter = AppPickerAdapter { _ ->
-            // Selection changed, nothing to do here
+            applySortAndShow()
         }
         adapter.setSelectedPackages(preSelectedApps)
         binding.recyclerApps.layoutManager = LinearLayoutManager(this)
@@ -109,15 +109,18 @@ class AppPickerActivity : AppCompatActivity() {
 
     private fun applySortAndShow() {
         if (allApps.isEmpty()) return
-        val sorted = when (sortMode) {
-            SortMode.TIME_SPENT -> allApps.sortedWith(
-                compareByDescending<AppInfo> { it.usageSecondsLastWeek }
-                    .thenBy { it.appName.lowercase() }
-            )
-            SortMode.ALPHABETICAL -> allApps.sortedBy { it.appName.lowercase() }
+        val withSnapchat = insertSnapchatVirtuals(allApps)
+        val withInstagram = insertInstagramVirtuals(withSnapchat)
+        val withYoutube = insertYoutubeVirtuals(withInstagram)
+        val selected = adapter.getSelectedPackages().toSet()
+        val comparator = when (sortMode) {
+            SortMode.TIME_SPENT -> compareByDescending<AppInfo> { selected.contains(it.packageName) }
+                .thenByDescending { it.usageSecondsLastWeek }
+                .thenBy { it.appName.lowercase() }
+            SortMode.ALPHABETICAL -> compareByDescending<AppInfo> { selected.contains(it.packageName) }
+                .thenBy { it.appName.lowercase() }
         }
-        val withSnapchat = insertSnapchatVirtuals(sorted)
-        adapter.setApps(insertInstagramVirtuals(withSnapchat))
+        adapter.setApps(withYoutube.sortedWith(comparator))
     }
 
     private fun insertSnapchatVirtuals(apps: List<AppInfo>): List<AppInfo> {
@@ -159,6 +162,23 @@ class AppPickerActivity : AppCompatActivity() {
             parentPackage = AppTargets.INSTAGRAM_PACKAGE
         )
         mutable.add(instagramIndex + 1, reels)
+        return mutable
+    }
+
+    private fun insertYoutubeVirtuals(apps: List<AppInfo>): List<AppInfo> {
+        val mutable = apps.toMutableList()
+        val youtubeIndex = mutable.indexOfFirst { it.packageName == AppTargets.YOUTUBE_PACKAGE }
+        if (youtubeIndex < 0) return mutable
+
+        val youtubeApp = mutable[youtubeIndex]
+        val shorts = youtubeApp.copy(
+            packageName = AppTargets.YOUTUBE_SHORTS,
+            appName = "Shorts",
+            usageSecondsLastWeek = 0,
+            isVirtual = true,
+            parentPackage = AppTargets.YOUTUBE_PACKAGE
+        )
+        mutable.add(youtubeIndex + 1, shorts)
         return mutable
     }
 

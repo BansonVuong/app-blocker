@@ -57,6 +57,7 @@ class AppPickerAdapter(
                 when (app.parentPackage) {
                     AppTargets.SNAPCHAT_PACKAGE -> context.getString(R.string.snapchat_tab_label)
                     AppTargets.INSTAGRAM_PACKAGE -> context.getString(R.string.instagram_reels_label)
+                    AppTargets.YOUTUBE_PACKAGE -> context.getString(R.string.youtube_shorts_label)
                     else -> context.getString(R.string.snapchat_tab_label)
                 }
             } else {

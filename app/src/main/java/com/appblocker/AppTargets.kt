@@ -6,13 +6,17 @@ object AppTargets {
     const val SNAPCHAT_SPOTLIGHT = "$SNAPCHAT_PACKAGE:spotlight"
     const val INSTAGRAM_PACKAGE = "com.instagram.android"
     const val INSTAGRAM_REELS = "$INSTAGRAM_PACKAGE:reels"
+    const val YOUTUBE_PACKAGE = "com.google.android.youtube"
+    const val YOUTUBE_SHORTS = "$YOUTUBE_PACKAGE:shorts"
 
     val snapchatVirtualPackages = setOf(SNAPCHAT_STORIES, SNAPCHAT_SPOTLIGHT)
     val instagramVirtualPackages = setOf(INSTAGRAM_REELS)
+    val youtubeVirtualPackages = setOf(YOUTUBE_SHORTS)
     private val virtualToParent = mapOf(
         SNAPCHAT_STORIES to SNAPCHAT_PACKAGE,
         SNAPCHAT_SPOTLIGHT to SNAPCHAT_PACKAGE,
-        INSTAGRAM_REELS to INSTAGRAM_PACKAGE
+        INSTAGRAM_REELS to INSTAGRAM_PACKAGE,
+        YOUTUBE_SHORTS to YOUTUBE_PACKAGE
     )
 
     fun isVirtualPackage(packageName: String): Boolean {

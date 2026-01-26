@@ -38,6 +38,7 @@ class AppBlockerService : AccessibilityService() {
     private var lastBlockedEventTimeMs: Long = 0
     private val snapchatDetector = SnapchatDetector()
     private val instagramDetector = InstagramDetector()
+    private val youtubeDetector = YouTubeDetector()
     private var lastForegroundPackage: String? = null
 
     // Local session tracking to enable immediate blocking when timer runs out
@@ -55,6 +56,7 @@ class AppBlockerService : AccessibilityService() {
         private const val SNAPCHAT_DETECTION_INTERVAL_MS = 400L
         private const val SNAPCHAT_HEADER_MAX_Y_DP = 260
         private const val INSTAGRAM_DETECTION_INTERVAL_MS = 400L
+        private const val YOUTUBE_DETECTION_INTERVAL_MS = 400L
         private const val LOG_TAG = "AppBlockerOverlay"
     }
 
@@ -471,6 +473,9 @@ class AppBlockerService : AccessibilityService() {
         if (packageName == AppTargets.INSTAGRAM_PACKAGE) {
             return resolveInstagramPackage(packageName, eventType, nowMs)
         }
+        if (packageName == AppTargets.YOUTUBE_PACKAGE) {
+            return resolveYouTubePackage(packageName, eventType, nowMs)
+        }
         return packageName
     }
 
@@ -495,6 +500,30 @@ class AppBlockerService : AccessibilityService() {
             AppTargets.INSTAGRAM_REELS
         } else {
             AppTargets.INSTAGRAM_PACKAGE
+        }
+    }
+
+    /**
+     * Resolve YouTube Shorts tab to a virtual package if a block set exists.
+     */
+    private fun resolveYouTubePackage(
+        packageName: String,
+        eventType: Int,
+        nowMs: Long
+    ): String {
+        if (packageName != AppTargets.YOUTUBE_PACKAGE) return packageName
+        if (storage.getBlockSetForApp(AppTargets.YOUTUBE_PACKAGE) != null) {
+            return AppTargets.YOUTUBE_PACKAGE
+        }
+        val hasShortsBlock = storage.getBlockSetForApp(AppTargets.YOUTUBE_SHORTS) != null
+        if (!hasShortsBlock) {
+            return AppTargets.YOUTUBE_PACKAGE
+        }
+        val tab = youtubeDetector.detect(eventType, nowMs, rootInActiveWindow)
+        return if (tab == YouTubeTab.SHORTS) {
+            AppTargets.YOUTUBE_SHORTS
+        } else {
+            AppTargets.YOUTUBE_PACKAGE
         }
     }
 
@@ -662,6 +691,54 @@ class AppBlockerService : AccessibilityService() {
         }
     }
 
+    private inner class YouTubeDetector {
+        private var lastDetectionMs: Long = 0
+        private var lastTab: YouTubeTab = YouTubeTab.UNKNOWN
+
+        fun detect(
+            eventType: Int,
+            nowMs: Long,
+            root: android.view.accessibility.AccessibilityNodeInfo?
+        ): YouTubeTab {
+            val shouldUpdate = eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+                eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ||
+                eventType == AccessibilityEvent.TYPE_VIEW_CLICKED
+            if (!shouldUpdate) return lastTab
+            if (nowMs - lastDetectionMs < YOUTUBE_DETECTION_INTERVAL_MS) {
+                return lastTab
+            }
+
+            lastDetectionMs = nowMs
+            val rootNode = root ?: return lastTab
+            var selectedShorts = false
+
+            val queue: ArrayDeque<android.view.accessibility.AccessibilityNodeInfo> = ArrayDeque()
+            queue.add(rootNode)
+            while (queue.isNotEmpty()) {
+                val node = queue.removeFirst()
+                val viewId = node.viewIdResourceName.orEmpty()
+                val contentDesc = node.contentDescription?.toString()?.trim().orEmpty()
+                val text = node.text?.toString()?.trim().orEmpty()
+
+                val isShortsLabel = contentDesc.equals("Shorts", ignoreCase = true) ||
+                    text.equals("Shorts", ignoreCase = true)
+                val isShortsViewId = viewId.contains("shorts", ignoreCase = true)
+
+                if ((isShortsLabel || isShortsViewId) && (node.isSelected || node.isChecked)) {
+                    selectedShorts = true
+                    break
+                }
+
+                for (i in 0 until node.childCount) {
+                    node.getChild(i)?.let { queue.add(it) }
+                }
+            }
+
+            lastTab = if (selectedShorts) YouTubeTab.SHORTS else YouTubeTab.UNKNOWN
+            return lastTab
+        }
+    }
+
     private enum class SnapchatTab {
         STORIES,
         SPOTLIGHT,
@@ -671,6 +748,11 @@ class AppBlockerService : AccessibilityService() {
 
     private enum class InstagramTab {
         REELS,
+        UNKNOWN
+    }
+
+    private enum class YouTubeTab {
+        SHORTS,
         UNKNOWN
     }
 

@@ -19,6 +19,7 @@
     <string name="time_used">Time used: %s</string>
     <string name="snapchat_tab_label">Snapchat tab</string>
     <string name="instagram_reels_label">Instagram Reels</string>
+    <string name="youtube_shorts_label">YouTube Shorts</string>
     <string name="quota_exceeded">Quota Exceeded</string>
     <string name="quota_exceeded_message">You\'ve used your time limit for this block set. Wait for your usage to expire.</string>
     <string name="unblocked_at">Unblocked at %s</string>
