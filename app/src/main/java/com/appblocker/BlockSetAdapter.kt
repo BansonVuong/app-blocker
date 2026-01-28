@@ -50,24 +50,39 @@ class BlockSetAdapter(
             val usedSeconds = totalSeconds - remainingSeconds
             val progress = if (totalSeconds > 0) (usedSeconds * 100) / totalSeconds else 0
 
-            binding.progressQuota.progress = progress
+            if (storage.isLockdownActive()) {
+                val lockdownSeconds = storage.getLockdownRemainingSeconds()
+                val hours = lockdownSeconds / 3600
+                val minutes = (lockdownSeconds % 3600) / 60
+                binding.textRemaining.text = binding.root.context.getString(
+                    R.string.lockdown_time_left,
+                    hours,
+                    minutes
+                )
+                binding.progressQuota.progress = 100
+                binding.progressQuota.setIndicatorColor(
+                    binding.root.context.getColor(R.color.red)
+                )
+            } else {
+                binding.progressQuota.progress = progress
 
-            // Format as MM:SS
-            val minutes = displaySeconds / 60
-            val seconds = displaySeconds % 60
-            binding.textRemaining.text = binding.root.context.getString(
-                R.string.time_left,
-                minutes,
-                seconds
-            )
+                // Format as MM:SS
+                val minutes = displaySeconds / 60
+                val seconds = displaySeconds % 60
+                binding.textRemaining.text = binding.root.context.getString(
+                    R.string.time_left,
+                    minutes,
+                    seconds
+                )
 
-            // Color based on remaining time (in seconds)
-            val color = when {
-                displaySeconds <= 0 -> binding.root.context.getColor(R.color.red)
-                displaySeconds <= 60 -> binding.root.context.getColor(R.color.accent)  // Last minute
-                else -> binding.root.context.getColor(R.color.green)
+                // Color based on remaining time (in seconds)
+                val color = when {
+                    displaySeconds <= 0 -> binding.root.context.getColor(R.color.red)
+                    displaySeconds <= 60 -> binding.root.context.getColor(R.color.accent)  // Last minute
+                    else -> binding.root.context.getColor(R.color.green)
+                }
+                binding.progressQuota.setIndicatorColor(color)
             }
-            binding.progressQuota.setIndicatorColor(color)
 
             binding.root.setOnClickListener {
                 onItemClick(blockSet)

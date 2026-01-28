@@ -76,6 +76,7 @@ class Storage(context: Context) {
         private const val KEY_OVERLAY_Y_PREFIX = "overlay_y_"
         private const val KEY_VIRTUAL_SESSIONS_PREFIX = "virtual_sessions_"
         private const val KEY_OVERRIDE_END_PREFIX = "override_end_"
+        private const val KEY_LOCKDOWN_END = "lockdown_end"
         private const val KEY_OVERRIDE_AUTH_MODE = "override_auth_mode"
         private const val KEY_OVERRIDE_PASSWORD = "override_password"
         private const val KEY_SETTINGS_AUTH_MODE = "settings_auth_mode"
@@ -264,6 +265,58 @@ class Storage(context: Context) {
         val durationMs = minutes * 60 * 1000L
         val endMs = nowMs + durationMs
         prefs.edit().putLong(KEY_OVERRIDE_END_PREFIX + blockSetId, endMs).apply()
+    }
+
+    fun setLockdownHours(
+        hours: Int,
+        nowMs: Long = System.currentTimeMillis()
+    ) {
+        val durationMs = hours * 60L * 60L * 1000L
+        val endMs = nowMs + durationMs
+        prefs.edit().putLong(KEY_LOCKDOWN_END, endMs).apply()
+    }
+
+    fun clearLockdown() {
+        prefs.edit().remove(KEY_LOCKDOWN_END).apply()
+    }
+
+    fun isLockdownActive(
+        nowMs: Long = System.currentTimeMillis()
+    ): Boolean {
+        val endMs = prefs.getLong(KEY_LOCKDOWN_END, 0L)
+        if (endMs <= nowMs) {
+            if (endMs > 0L) {
+                clearLockdown()
+            }
+            return false
+        }
+        return true
+    }
+
+    fun getLockdownRemainingSeconds(
+        nowMs: Long = System.currentTimeMillis()
+    ): Int {
+        val endMs = prefs.getLong(KEY_LOCKDOWN_END, 0L)
+        if (endMs <= nowMs) {
+            if (endMs > 0L) {
+                clearLockdown()
+            }
+            return 0
+        }
+        return ((endMs - nowMs) / 1000).toInt()
+    }
+
+    fun getLockdownEndMillis(
+        nowMs: Long = System.currentTimeMillis()
+    ): Long? {
+        val endMs = prefs.getLong(KEY_LOCKDOWN_END, 0L)
+        if (endMs <= nowMs) {
+            if (endMs > 0L) {
+                clearLockdown()
+            }
+            return null
+        }
+        return endMs
     }
 
     fun getOverrideAuthMode(): Int {

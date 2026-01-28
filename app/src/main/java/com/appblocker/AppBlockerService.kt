@@ -168,6 +168,12 @@ class AppBlockerService : AccessibilityService() {
     private fun handleBlockedApp(packageName: String, blockSet: BlockSet, nowMs: Long) {
         lastBlockedEventTimeMs = nowMs
         cancelPendingStop()
+        if (storage.isLockdownActive(nowMs)) {
+            logDebug("blocked", "lockdown active for ${blockSet.name}")
+            launchBlockedScreen(blockSet.name, blockSet.id, packageName)
+            stopTracking()
+            return
+        }
         val overrideActive = storage.isOverrideActive(blockSet, nowMs)
         if (storage.isQuotaExceeded(blockSet) && !overrideActive) {
             logDebug("blocked", "quota exceeded for ${blockSet.name}")

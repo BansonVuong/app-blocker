@@ -100,6 +100,16 @@ class BlockedActivity : AppCompatActivity() {
             return
         }
 
+        if (storage.isLockdownActive()) {
+            val unblockAtMillis = storage.getLockdownEndMillis() ?: return
+            val date = Date(unblockAtMillis)
+            val formatter = SimpleDateFormat("h:mm a", Locale.getDefault())
+            val time = formatter.format(date)
+            binding.textUnblockTime.visibility = View.VISIBLE
+            binding.textUnblockTime.text = getString(R.string.unblocked_at, time)
+            return
+        }
+
         if (storage.isOverrideActive(blockSet)) {
             finish()
             return

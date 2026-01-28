@@ -133,6 +133,15 @@ class MainActivity : AppCompatActivity() {
             showOverrideFlow()
         }
 
+        binding.buttonLockdown.setOnClickListener {
+            if (storage.isLockdownActive()) {
+                storage.clearLockdown()
+                refreshData()
+                return@setOnClickListener
+            }
+            showLockdownHoursDialog()
+        }
+
         setupDebugTools()
     }
 
@@ -207,6 +216,12 @@ class MainActivity : AppCompatActivity() {
             getString(R.string.cancel_override)
         } else {
             getString(R.string.override)
+        }
+
+        binding.buttonLockdown.text = if (storage.isLockdownActive()) {
+            getString(R.string.cancel_lockdown)
+        } else {
+            getString(R.string.lockdown)
         }
     }
 
@@ -442,6 +457,41 @@ class MainActivity : AppCompatActivity() {
                 blockSets.forEach { blockSet ->
                     storage.setOverrideMinutes(blockSet.id, minutes)
                 }
+                refreshData()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showLockdownHoursDialog() {
+        val padding = (16 * resources.displayMetrics.density).toInt()
+        val inputLayout = TextInputLayout(this).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            hint = getString(R.string.lockdown_hours)
+            placeholderText = getString(R.string.lockdown_hours_hint)
+        }
+        val input = TextInputEditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+        }
+        inputLayout.addView(input)
+        val container = FrameLayout(this).apply {
+            setPadding(padding, padding, padding, 0)
+            addView(inputLayout)
+        }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.lockdown)
+            .setView(container)
+            .setPositiveButton(R.string.lockdown) { _, _ ->
+                val hours = input.text?.toString()?.trim()?.toIntOrNull()
+                if (hours == null || hours <= 0) {
+                    Toast.makeText(this, getString(R.string.enter_lockdown_hours), Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                storage.setLockdownHours(hours)
                 refreshData()
             }
             .setNegativeButton(android.R.string.cancel, null)
