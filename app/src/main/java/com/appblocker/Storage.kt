@@ -77,6 +77,8 @@ class Storage(context: Context) {
         private const val KEY_VIRTUAL_SESSIONS_PREFIX = "virtual_sessions_"
         private const val KEY_OVERRIDE_END_PREFIX = "override_end_"
         private const val KEY_LOCKDOWN_END = "lockdown_end"
+        private const val KEY_LOCKDOWN_AUTH_MODE = "lockdown_auth_mode"
+        private const val KEY_LOCKDOWN_PASSWORD = "lockdown_password"
         private const val KEY_OVERRIDE_AUTH_MODE = "override_auth_mode"
         private const val KEY_OVERRIDE_PASSWORD = "override_password"
         private const val KEY_SETTINGS_AUTH_MODE = "settings_auth_mode"
@@ -89,6 +91,12 @@ class Storage(context: Context) {
         const val OVERRIDE_AUTH_RANDOM_32 = 2
         const val OVERRIDE_AUTH_RANDOM_64 = 3
         const val OVERRIDE_AUTH_RANDOM_128 = 4
+
+        const val LOCKDOWN_CANCEL_DISABLED = 0
+        const val LOCKDOWN_CANCEL_PASSWORD = 1
+        const val LOCKDOWN_CANCEL_RANDOM_32 = 2
+        const val LOCKDOWN_CANCEL_RANDOM_64 = 3
+        const val LOCKDOWN_CANCEL_RANDOM_128 = 4
     }
 
     // ===== Debug-only prefs (easy to remove) =====
@@ -274,6 +282,22 @@ class Storage(context: Context) {
         val durationMs = hours * 60L * 60L * 1000L
         val endMs = nowMs + durationMs
         prefs.edit().putLong(KEY_LOCKDOWN_END, endMs).apply()
+    }
+
+    fun getLockdownCancelAuthMode(): Int {
+        return prefs.getInt(KEY_LOCKDOWN_AUTH_MODE, LOCKDOWN_CANCEL_DISABLED)
+    }
+
+    fun setLockdownCancelAuthMode(mode: Int) {
+        prefs.edit().putInt(KEY_LOCKDOWN_AUTH_MODE, mode).apply()
+    }
+
+    fun getLockdownPassword(): String {
+        return prefs.getString(KEY_LOCKDOWN_PASSWORD, "") ?: ""
+    }
+
+    fun setLockdownPassword(password: String) {
+        prefs.edit().putString(KEY_LOCKDOWN_PASSWORD, password).apply()
     }
 
     fun clearLockdown() {

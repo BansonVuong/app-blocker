@@ -135,8 +135,7 @@ class MainActivity : AppCompatActivity() {
 
         binding.buttonLockdown.setOnClickListener {
             if (storage.isLockdownActive()) {
-                storage.clearLockdown()
-                refreshData()
+                showLockdownCancelFlow()
                 return@setOnClickListener
             }
             showLockdownHoursDialog()
@@ -252,9 +251,7 @@ class MainActivity : AppCompatActivity() {
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
             R.id.action_settings -> {
-                showSettingsAccessFlow {
-                    startActivity(Intent(this, SettingsActivity::class.java))
-                }
+                startActivity(Intent(this, SettingsActivity::class.java))
                 true
             }
             else -> super.onOptionsItemSelected(item)
@@ -413,9 +410,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun generateRandomPassword(mode: Int): String {
-        val length = when (mode) {
-            Storage.OVERRIDE_AUTH_RANDOM_64 -> 64
-            Storage.OVERRIDE_AUTH_RANDOM_128 -> 128
+        val length = when {
+            mode == Storage.OVERRIDE_AUTH_RANDOM_64 || mode == Storage.LOCKDOWN_CANCEL_RANDOM_64 -> 64
+            mode == Storage.OVERRIDE_AUTH_RANDOM_128 || mode == Storage.LOCKDOWN_CANCEL_RANDOM_128 -> 128
             else -> 32
         }
         val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
@@ -492,6 +489,90 @@ class MainActivity : AppCompatActivity() {
                     return@setPositiveButton
                 }
                 storage.setLockdownHours(hours)
+                refreshData()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showLockdownCancelFlow() {
+        val authMode = storage.getLockdownCancelAuthMode()
+        if (authMode == Storage.LOCKDOWN_CANCEL_DISABLED) {
+            Toast.makeText(this, getString(R.string.lockdown_cannot_cancel), Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (authMode == Storage.LOCKDOWN_CANCEL_PASSWORD) {
+            showLockdownPasswordDialog()
+            return
+        }
+        showRandomLockdownPasswordDialog(authMode)
+    }
+
+    private fun showLockdownPasswordDialog() {
+        val padding = (16 * resources.displayMetrics.density).toInt()
+        val inputLayout = TextInputLayout(this).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            hint = getString(R.string.lockdown_password_label)
+        }
+        val input = TextInputEditText(this).apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        inputLayout.addView(input)
+        val container = FrameLayout(this).apply {
+            setPadding(padding, padding, padding, 0)
+            addView(inputLayout)
+        }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.cancel_lockdown)
+            .setView(container)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val entered = input.text?.toString() ?: ""
+                val stored = storage.getLockdownPassword()
+                if (entered != stored) {
+                    Toast.makeText(this, getString(R.string.lockdown_password_incorrect), Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                storage.clearLockdown()
+                refreshData()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showRandomLockdownPasswordDialog(authMode: Int) {
+        val randomPassword = generateRandomPassword(authMode)
+        val padding = (16 * resources.displayMetrics.density).toInt()
+        val inputLayout = TextInputLayout(this).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            hint = getString(R.string.lockdown_password_label)
+        }
+        val input = TextInputEditText(this).apply {
+            inputType = InputType.TYPE_CLASS_TEXT
+        }
+        inputLayout.addView(input)
+        val container = FrameLayout(this).apply {
+            setPadding(padding, padding, padding, 0)
+            addView(inputLayout)
+        }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.cancel_lockdown)
+            .setMessage(getString(R.string.lockdown_random_password_message, randomPassword))
+            .setView(container)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val entered = input.text?.toString() ?: ""
+                if (entered != randomPassword) {
+                    Toast.makeText(this, getString(R.string.lockdown_password_incorrect), Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                storage.clearLockdown()
                 refreshData()
             }
             .setNegativeButton(android.R.string.cancel, null)
