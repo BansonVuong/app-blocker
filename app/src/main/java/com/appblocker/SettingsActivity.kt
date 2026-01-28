@@ -5,14 +5,8 @@ import android.widget.ArrayAdapter
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.widget.doAfterTextChanged
 import com.appblocker.databinding.ActivitySettingsBinding
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.textfield.TextInputEditText
-import com.google.android.material.textfield.TextInputLayout
 import java.security.SecureRandom
 import android.text.InputType
-import android.view.ViewGroup
-import android.widget.FrameLayout
-import android.widget.Toast
 
 class SettingsActivity : AppCompatActivity() {
 
@@ -50,11 +44,7 @@ class SettingsActivity : AppCompatActivity() {
             unlocked = true
             return true
         }
-        if (authMode == Storage.OVERRIDE_AUTH_PASSWORD) {
-            showSettingsPasswordDialog()
-            return false
-        }
-        showRandomSettingsPasswordDialog(authMode)
+        showSettingsAccessDialog(authMode)
         return false
     }
 
@@ -208,38 +198,30 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    private fun showSettingsPasswordDialog() {
-        val padding = (16 * resources.displayMetrics.density).toInt()
-        val inputLayout = TextInputLayout(this).apply {
-            layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
+    private fun showSettingsAccessDialog(authMode: Int) {
+        val (message, expectedPassword, displayPassword) = if (authMode == Storage.OVERRIDE_AUTH_PASSWORD) {
+            Triple(
+                getString(R.string.enter_password_to_continue),
+                storage.getSettingsPassword(),
+                false
             )
-            hint = getString(R.string.settings_password_label)
+        } else {
+            val randomPassword = generateRandomPassword(authMode)
+            Triple(
+                getString(R.string.settings_random_password_message),
+                randomPassword,
+                true
+            )
         }
-        val input = TextInputEditText(this).apply {
-            inputType = InputType.TYPE_CLASS_TEXT
-        }
-        inputLayout.addView(input)
-        val container = FrameLayout(this).apply {
-            setPadding(padding, padding, padding, 0)
-            addView(inputLayout)
-        }
-
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.settings_access_title)
-            .setView(container)
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                val entered = input.text?.toString() ?: ""
-                val stored = storage.getSettingsPassword()
-                if (entered != stored) {
-                    Toast.makeText(
-                        this,
-                        getString(R.string.settings_password_incorrect),
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    return@setPositiveButton
-                }
+        showPasswordDialog(
+            headerResId = R.string.settings_access_title,
+            message = message,
+            expectedPassword = expectedPassword,
+            displayPassword = displayPassword,
+            incorrectToastResId = R.string.settings_password_incorrect,
+            positiveButtonResId = R.string.continue_label,
+            inputType = InputType.TYPE_CLASS_TEXT,
+            onAuthorized = {
                 unlocked = true
                 setupOverrideAuthDropdown()
                 setupPasswordField()
@@ -247,58 +229,9 @@ class SettingsActivity : AppCompatActivity() {
                 setupLockdownPasswordField()
                 setupSettingsAuthDropdown()
                 setupSettingsPasswordField()
-            }
-            .setNegativeButton(android.R.string.cancel) { _, _ ->
-                finish()
-            }
-            .show()
-    }
-
-    private fun showRandomSettingsPasswordDialog(authMode: Int) {
-        val randomPassword = generateRandomPassword(authMode)
-        val padding = (16 * resources.displayMetrics.density).toInt()
-        val inputLayout = TextInputLayout(this).apply {
-            layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-            hint = getString(R.string.settings_password_label)
-        }
-        val input = TextInputEditText(this).apply {
-            inputType = InputType.TYPE_CLASS_TEXT
-        }
-        inputLayout.addView(input)
-        val container = FrameLayout(this).apply {
-            setPadding(padding, padding, padding, 0)
-            addView(inputLayout)
-        }
-
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.settings_access_title)
-            .setMessage(getString(R.string.settings_random_password_message, randomPassword))
-            .setView(container)
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                val entered = input.text?.toString() ?: ""
-                if (entered != randomPassword) {
-                    Toast.makeText(
-                        this,
-                        getString(R.string.settings_password_incorrect),
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    return@setPositiveButton
-                }
-                unlocked = true
-                setupOverrideAuthDropdown()
-                setupPasswordField()
-                setupLockdownAuthDropdown()
-                setupLockdownPasswordField()
-                setupSettingsAuthDropdown()
-                setupSettingsPasswordField()
-            }
-            .setNegativeButton(android.R.string.cancel) { _, _ ->
-                finish()
-            }
-            .show()
+            },
+            onCancelled = { finish() }
+        )
     }
 
     private fun generateRandomPassword(mode: Int): String {

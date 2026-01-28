@@ -148,4 +148,29 @@ class StorageTest {
         assertEquals(Storage.OVERRIDE_AUTH_PASSWORD, storage.getSettingsAuthMode())
         assertEquals("admin", storage.getSettingsPassword())
     }
+
+    @Test
+    fun lockdownTracksRemainingTime() {
+        val storage = Storage(context)
+        val nowMs = 1_000L
+
+        storage.setLockdownHours(2, nowMs)
+
+        assertTrue(storage.isLockdownActive(nowMs))
+        assertEquals(2 * 60 * 60, storage.getLockdownRemainingSeconds(nowMs))
+        assertFalse(storage.isLockdownActive(nowMs + 2 * 60 * 60 * 1000L + 1))
+        assertEquals(0, storage.getLockdownRemainingSeconds(nowMs + 2 * 60 * 60 * 1000L + 1))
+    }
+
+    @Test
+    fun lockdownAuthSettingsPersist() {
+        val storage = Storage(context)
+
+        assertEquals(Storage.LOCKDOWN_CANCEL_DISABLED, storage.getLockdownCancelAuthMode())
+        storage.setLockdownCancelAuthMode(Storage.LOCKDOWN_CANCEL_PASSWORD)
+        storage.setLockdownPassword("lock-secret")
+
+        assertEquals(Storage.LOCKDOWN_CANCEL_PASSWORD, storage.getLockdownCancelAuthMode())
+        assertEquals("lock-secret", storage.getLockdownPassword())
+    }
 }
