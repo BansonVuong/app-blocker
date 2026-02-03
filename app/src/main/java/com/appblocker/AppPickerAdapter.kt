@@ -14,6 +14,7 @@ class AppPickerAdapter(
 
     fun setApps(apps: List<AppInfo>) {
         this.apps = apps
+        syncChildrenWithSelectedParents()
         notifyDataSetChanged()
     }
 
@@ -58,7 +59,8 @@ class AppPickerAdapter(
                     AppTargets.SNAPCHAT_PACKAGE -> context.getString(R.string.snapchat_tab_label)
                     AppTargets.INSTAGRAM_PACKAGE -> context.getString(R.string.instagram_reels_label)
                     AppTargets.YOUTUBE_PACKAGE -> context.getString(R.string.youtube_shorts_label)
-                    else -> context.getString(R.string.snapchat_tab_label)
+                    in AppTargets.browserPackages -> context.getString(R.string.browser_private_tab_label)
+                    else -> context.getString(R.string.virtual_app_label)
                 }
             } else {
                 formatUsageTime(context, app.usageSecondsLastWeek)
@@ -87,15 +89,56 @@ class AppPickerAdapter(
             binding.imageIcon.layoutParams = iconParams
 
             binding.root.setOnClickListener {
-                if (selectedPackages.contains(app.packageName)) {
-                    selectedPackages.remove(app.packageName)
-                } else {
-                    selectedPackages.add(app.packageName)
-                }
+                val changedPackages = toggleSelection(app)
                 binding.checkbox.isChecked = selectedPackages.contains(app.packageName)
+                changedPackages
+                    .filter { it != app.packageName }
+                    .forEach { changedPackage ->
+                        val changedIndex = apps.indexOfFirst { it.packageName == changedPackage }
+                        if (changedIndex >= 0) notifyItemChanged(changedIndex)
+                    }
                 onSelectionChanged(selectedPackages.toList())
             }
         }
+    }
+
+    private fun toggleSelection(app: AppInfo): Set<String> {
+        val enable = !selectedPackages.contains(app.packageName)
+        val changedPackages = mutableSetOf<String>()
+
+        if (enable) {
+            changedPackages.addAll(addPackage(app.packageName))
+        } else {
+            changedPackages.addAll(removePackage(app.packageName))
+        }
+
+        if (!app.isVirtual) {
+            apps.asSequence()
+                .filter { it.isVirtual && it.parentPackage == app.packageName }
+                .forEach { child ->
+                    if (enable) {
+                        changedPackages.addAll(addPackage(child.packageName))
+                    } else {
+                        changedPackages.addAll(removePackage(child.packageName))
+                    }
+                }
+        }
+
+        return changedPackages
+    }
+
+    private fun addPackage(packageName: String): Set<String> {
+        return if (selectedPackages.add(packageName)) setOf(packageName) else emptySet()
+    }
+
+    private fun removePackage(packageName: String): Set<String> {
+        return if (selectedPackages.remove(packageName)) setOf(packageName) else emptySet()
+    }
+
+    private fun syncChildrenWithSelectedParents() {
+        apps.asSequence()
+            .filter { it.isVirtual && it.parentPackage != null && selectedPackages.contains(it.parentPackage) }
+            .forEach { selectedPackages.add(it.packageName) }
     }
 
     private fun formatUsageTime(context: android.content.Context, usageSeconds: Int): String {

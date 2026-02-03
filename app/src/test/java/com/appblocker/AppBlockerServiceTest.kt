@@ -98,6 +98,23 @@ class AppBlockerServiceTest {
         return result.toString()
     }
 
+    private fun detectBrowserIncognito(
+        service: AppBlockerService,
+        eventType: Int,
+        nowMs: Long,
+        root: AccessibilityNodeInfo
+    ): Boolean {
+        val detector = getPrivateField(service, "browserIncognitoDetector")
+        val method = detector!!.javaClass.getDeclaredMethod(
+            "detect",
+            Int::class.javaPrimitiveType,
+            Long::class.javaPrimitiveType,
+            AccessibilityNodeInfo::class.java
+        )
+        method.isAccessible = true
+        return method.invoke(detector, eventType, nowMs, root) as Boolean
+    }
+
     private fun addChild(parent: AccessibilityNodeInfo, child: AccessibilityNodeInfo) {
         Shadows.shadowOf(parent).addChild(child)
     }
@@ -295,6 +312,57 @@ class AppBlockerServiceTest {
         )
 
         assertEquals("STORIES", tab)
+    }
+
+    @Test
+    fun browserIncognitoDetectorDetectsIncognitoText() {
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        val root = buildNode()
+        val incognitoChip = buildNode(text = "Incognito")
+        addChild(root, incognitoChip)
+
+        val isIncognito = detectBrowserIncognito(
+            service,
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
+            1000L,
+            root
+        )
+
+        assertTrue(isIncognito)
+    }
+
+    @Test
+    fun browserIncognitoDetectorDetectsInPrivateViewId() {
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        val root = buildNode()
+        val inPrivateNode = buildNode(viewId = "com.microsoft.emmx:id/inprivate_indicator")
+        addChild(root, inPrivateNode)
+
+        val isIncognito = detectBrowserIncognito(
+            service,
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
+            1000L,
+            root
+        )
+
+        assertTrue(isIncognito)
+    }
+
+    @Test
+    fun browserIncognitoDetectorDetectsPrivateBrowsingPhrase() {
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        val root = buildNode()
+        val privateBrowsing = buildNode(text = "Private browsing")
+        addChild(root, privateBrowsing)
+
+        val isIncognito = detectBrowserIncognito(
+            service,
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
+            1000L,
+            root
+        )
+
+        assertTrue(isIncognito)
     }
 
     @Test

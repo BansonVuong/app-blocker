@@ -1,1 +1,1 @@
-Always run tests after completing a task.
+Always run tests after modifying any files, but only after modifying files.

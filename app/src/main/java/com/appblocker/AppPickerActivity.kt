@@ -34,12 +34,15 @@ class AppPickerActivity : AppCompatActivity() {
     }
 
     private fun setupRecyclerView(preSelectedApps: List<String>) {
-        adapter = AppPickerAdapter { _ ->
-            applySortAndShow()
-        }
+        adapter = AppPickerAdapter { _ -> }
         adapter.setSelectedPackages(preSelectedApps)
         binding.recyclerApps.layoutManager = LinearLayoutManager(this)
         binding.recyclerApps.adapter = adapter
+    }
+
+    override fun onResume() {
+        super.onResume()
+        applySortAndShow()
     }
 
     private fun setupClickListeners() {
@@ -109,18 +112,24 @@ class AppPickerActivity : AppCompatActivity() {
 
     private fun applySortAndShow() {
         if (allApps.isEmpty()) return
-        val withSnapchat = insertSnapchatVirtuals(allApps)
-        val withInstagram = insertInstagramVirtuals(withSnapchat)
-        val withYoutube = insertYoutubeVirtuals(withInstagram)
         val selected = adapter.getSelectedPackages().toSet()
+        val selectedForSort = selected
+            .map { AppTargets.getParentPackage(it) ?: it }
+            .toSet()
         val comparator = when (sortMode) {
-            SortMode.TIME_SPENT -> compareByDescending<AppInfo> { selected.contains(it.packageName) }
+            SortMode.TIME_SPENT -> compareByDescending<AppInfo> { selectedForSort.contains(it.packageName) }
                 .thenByDescending { it.usageSecondsLastWeek }
                 .thenBy { it.appName.lowercase() }
-            SortMode.ALPHABETICAL -> compareByDescending<AppInfo> { selected.contains(it.packageName) }
+            SortMode.ALPHABETICAL -> compareByDescending<AppInfo> { selectedForSort.contains(it.packageName) }
                 .thenBy { it.appName.lowercase() }
         }
-        adapter.setApps(withYoutube.sortedWith(comparator))
+        val baseApps = allApps.filterNot { AppTargets.isVirtualPackage(it.packageName) }
+        val sortedApps = baseApps.sortedWith(comparator)
+        val withSnapchat = insertSnapchatVirtuals(sortedApps)
+        val withInstagram = insertInstagramVirtuals(withSnapchat)
+        val withYoutube = insertYoutubeVirtuals(withInstagram)
+        val withBrowserIncognito = insertBrowserIncognitoVirtuals(withYoutube)
+        adapter.setApps(withBrowserIncognito)
     }
 
     private fun insertSnapchatVirtuals(apps: List<AppInfo>): List<AppInfo> {
@@ -179,6 +188,25 @@ class AppPickerActivity : AppCompatActivity() {
             parentPackage = AppTargets.YOUTUBE_PACKAGE
         )
         mutable.add(youtubeIndex + 1, shorts)
+        return mutable
+    }
+
+    private fun insertBrowserIncognitoVirtuals(apps: List<AppInfo>): List<AppInfo> {
+        val mutable = apps.toMutableList()
+        for (browserPackage in AppTargets.browserPackages) {
+            val browserIndex = mutable.indexOfFirst { it.packageName == browserPackage }
+            if (browserIndex < 0) continue
+            val target = AppTargets.getBrowserIncognitoTarget(browserPackage) ?: continue
+            val browserApp = mutable[browserIndex]
+            val incognito = browserApp.copy(
+                packageName = target.virtualPackage,
+                appName = target.label,
+                usageSecondsLastWeek = 0,
+                isVirtual = true,
+                parentPackage = target.parentPackage
+            )
+            mutable.add(browserIndex + 1, incognito)
+        }
         return mutable
     }
 
