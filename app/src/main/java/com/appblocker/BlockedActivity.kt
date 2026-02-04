@@ -49,10 +49,54 @@ class BlockedActivity : AppCompatActivity() {
 
         storage = App.instance.storage
 
+        applyIntentState(intent)
+
+        binding.buttonGoBack.setOnClickListener {
+            goHome()
+        }
+
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    goHome()
+                }
+            }
+        )
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        applyIntentState(intent)
+        handler.removeCallbacks(updateRunnable)
+        if (mode == MODE_INTERVENTION) {
+            showInterventionDialogIfNeeded()
+        } else {
+            handler.post(updateRunnable)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (mode == MODE_INTERVENTION) {
+            showInterventionDialogIfNeeded()
+            return
+        }
+        handler.post(updateRunnable)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        handler.removeCallbacks(updateRunnable)
+    }
+
+    private fun applyIntentState(intent: Intent) {
         val blockSetName = intent.getStringExtra(EXTRA_BLOCK_SET_NAME) ?: "Unknown"
         blockSetId = intent.getStringExtra(EXTRA_BLOCK_SET_ID)
         mode = intent.getIntExtra(EXTRA_MODE, MODE_QUOTA)
         interventionMode = intent.getIntExtra(EXTRA_INTERVENTION_MODE, BlockSet.INTERVENTION_NONE)
+        interventionDialogShown = false
 
         binding.textTitle.text = if (mode == MODE_INTERVENTION) {
             getString(R.string.intervention_required_title)
@@ -71,33 +115,6 @@ class BlockedActivity : AppCompatActivity() {
         } else {
             binding.textUnblockTime.visibility = View.GONE
         }
-
-        binding.buttonGoBack.setOnClickListener {
-            goHome()
-        }
-
-        onBackPressedDispatcher.addCallback(
-            this,
-            object : OnBackPressedCallback(true) {
-                override fun handleOnBackPressed() {
-                    goHome()
-                }
-            }
-        )
-    }
-
-    override fun onResume() {
-        super.onResume()
-        if (mode == MODE_INTERVENTION) {
-            showInterventionDialogIfNeeded()
-            return
-        }
-        handler.post(updateRunnable)
-    }
-
-    override fun onPause() {
-        super.onPause()
-        handler.removeCallbacks(updateRunnable)
     }
 
     private fun goHome() {
