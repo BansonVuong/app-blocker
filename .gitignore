@@ -1,4 +1,4 @@
-.uidump/
+uidump/
 .gradle/
 .idea/
 *.iml
