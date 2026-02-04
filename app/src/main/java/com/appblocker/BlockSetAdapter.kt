@@ -12,11 +12,17 @@ class BlockSetAdapter(
 
     private var blockSets: List<BlockSet> = emptyList()
     private lateinit var storage: Storage
+    private val timerPayload = Any()
 
     fun setData(blockSets: List<BlockSet>, storage: Storage) {
         this.blockSets = blockSets
         this.storage = storage
         notifyDataSetChanged()
+    }
+
+    fun refreshDynamicState() {
+        if (blockSets.isEmpty()) return
+        notifyItemRangeChanged(0, blockSets.size, timerPayload)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
@@ -29,7 +35,15 @@ class BlockSetAdapter(
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-        holder.bind(blockSets[position])
+        holder.bind(blockSets[position], updateStatic = true)
+    }
+
+    override fun onBindViewHolder(holder: ViewHolder, position: Int, payloads: MutableList<Any>) {
+        if (payloads.contains(timerPayload)) {
+            holder.bind(blockSets[position], updateStatic = false)
+            return
+        }
+        super.onBindViewHolder(holder, position, payloads)
     }
 
     override fun getItemCount() = blockSets.size
@@ -37,11 +51,15 @@ class BlockSetAdapter(
     inner class ViewHolder(private val binding: ItemBlockSetBinding) :
         RecyclerView.ViewHolder(binding.root) {
 
-        fun bind(blockSet: BlockSet) {
-            binding.textName.text = blockSet.name
-
-            val appCount = blockSet.apps.size
-            binding.textApps.text = binding.root.context.getString(R.string.apps_selected, appCount)
+        fun bind(blockSet: BlockSet, updateStatic: Boolean) {
+            if (updateStatic) {
+                binding.textName.text = blockSet.name
+                val appCount = blockSet.apps.size
+                binding.textApps.text = binding.root.context.getString(R.string.apps_selected, appCount)
+                binding.root.setOnClickListener {
+                    onItemClick(blockSet)
+                }
+            }
 
             val remainingSeconds = storage.getRemainingSeconds(blockSet)
             val overrideSeconds = storage.getOverrideRemainingSeconds(blockSet)
@@ -84,9 +102,6 @@ class BlockSetAdapter(
                 binding.progressQuota.setIndicatorColor(color)
             }
 
-            binding.root.setOnClickListener {
-                onItemClick(blockSet)
-            }
         }
     }
 }

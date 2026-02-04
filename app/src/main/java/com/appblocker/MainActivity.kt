@@ -36,6 +36,9 @@ class MainActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private var refreshRunnable: Runnable? = null
     private val secureRandom = SecureRandom()
+    private var lastBlockSetIds: List<String> = emptyList()
+    private var lastHasActiveOverride: Boolean = false
+    private var lastLockdownActive: Boolean = false
 
     private val blockSetLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -72,11 +75,11 @@ class MainActivity : AppCompatActivity() {
     private fun startPeriodicRefresh() {
         refreshRunnable = object : Runnable {
             override fun run() {
-                refreshData()
-                handler.postDelayed(this, 1000L)
+                refreshDynamicState()
+                handler.postDelayed(this, REFRESH_INTERVAL_MS)
             }
         }
-        handler.postDelayed(refreshRunnable!!, 1000L)
+        handler.postDelayed(refreshRunnable!!, REFRESH_INTERVAL_MS)
     }
 
     private fun stopPeriodicRefresh() {
@@ -205,24 +208,53 @@ class MainActivity : AppCompatActivity() {
 
     private fun refreshData() {
         val blockSets = storage.getBlockSets()
-        adapter.setData(blockSets, storage)
+        val blockSetIds = blockSets.map { it.id }
+        val blockSetsChanged = blockSetIds != lastBlockSetIds
+        if (blockSetsChanged) {
+            adapter.setData(blockSets, storage)
+            binding.textEmpty.visibility = if (blockSets.isEmpty()) View.VISIBLE else View.GONE
+            binding.recyclerBlockSets.visibility = if (blockSets.isEmpty()) View.GONE else View.VISIBLE
+            lastBlockSetIds = blockSetIds
+        }
+        updateActionButtons(blockSets)
+    }
 
-        binding.textEmpty.visibility = if (blockSets.isEmpty()) View.VISIBLE else View.GONE
-        binding.recyclerBlockSets.visibility = if (blockSets.isEmpty()) View.GONE else View.VISIBLE
+    private fun refreshDynamicState() {
+        val blockSets = storage.getBlockSets()
+        val blockSetIds = blockSets.map { it.id }
+        if (blockSetIds != lastBlockSetIds) {
+            refreshData()
+            return
+        }
+        adapter.refreshDynamicState()
+        updateActionButtons(blockSets)
+    }
 
+    private fun updateActionButtons(blockSets: List<BlockSet>) {
         val overrideEligible = blockSets.filter { it.allowOverride }
         val hasActiveOverride = overrideEligible.any { storage.isOverrideActive(it) }
-        binding.buttonOverride.text = if (hasActiveOverride) {
-            getString(R.string.cancel_override)
-        } else {
-            getString(R.string.override)
+        if (hasActiveOverride != lastHasActiveOverride) {
+            binding.buttonOverride.text = if (hasActiveOverride) {
+                getString(R.string.cancel_override)
+            } else {
+                getString(R.string.override)
+            }
+            lastHasActiveOverride = hasActiveOverride
         }
 
-        binding.buttonLockdown.text = if (storage.isLockdownActive()) {
-            getString(R.string.cancel_lockdown)
-        } else {
-            getString(R.string.lockdown)
+        val lockdownActive = storage.isLockdownActive()
+        if (lockdownActive != lastLockdownActive) {
+            binding.buttonLockdown.text = if (lockdownActive) {
+                getString(R.string.cancel_lockdown)
+            } else {
+                getString(R.string.lockdown)
+            }
+            lastLockdownActive = lockdownActive
         }
+    }
+
+    companion object {
+        private const val REFRESH_INTERVAL_MS = 5_000L
     }
 
     private fun showOverrideFlow() {

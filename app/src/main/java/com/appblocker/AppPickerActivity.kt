@@ -4,9 +4,12 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.appblocker.databinding.ActivityAppPickerBinding
-import kotlin.concurrent.thread
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class AppPickerActivity : AppCompatActivity() {
 
@@ -80,33 +83,33 @@ class AppPickerActivity : AppCompatActivity() {
     }
 
     private fun loadApps() {
-        thread {
+        lifecycleScope.launch {
             val pm = packageManager
-            val installedApps = pm.getInstalledApplications(0)
-                .filter { appInfo ->
-                    // Only show launchable apps (not system services)
-                    pm.getLaunchIntentForPackage(appInfo.packageName) != null &&
+            val apps = withContext(Dispatchers.IO) {
+                val installedApps = pm.getInstalledApplications(0)
+                    .filter { appInfo ->
+                        // Only show launchable apps (not system services)
+                        pm.getLaunchIntentForPackage(appInfo.packageName) != null &&
                             appInfo.packageName != packageName
+                    }
+                val packageNames = installedApps.map { it.packageName }.toSet()
+                val usageSecondsByPackage = App.instance.storage.getUsageSecondsLastWeek(packageNames)
+                installedApps.map { appInfo ->
+                    val usageSeconds = usageSecondsByPackage[appInfo.packageName] ?: 0
+                    AppInfo(
+                        packageName = appInfo.packageName,
+                        appName = appInfo.loadLabel(pm).toString(),
+                        icon = appInfo.loadIcon(pm),
+                        usageSecondsLastWeek = usageSeconds
+                    )
                 }
-            val packageNames = installedApps.map { it.packageName }.toSet()
-            val usageSecondsByPackage = App.instance.storage.getUsageSecondsLastWeek(packageNames)
-            val apps = installedApps.map { appInfo ->
-                val usageSeconds = usageSecondsByPackage[appInfo.packageName] ?: 0
-                AppInfo(
-                    packageName = appInfo.packageName,
-                    appName = appInfo.loadLabel(pm).toString(),
-                    icon = appInfo.loadIcon(pm),
-                    usageSecondsLastWeek = usageSeconds
-                )
             }
 
-            runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
-                allApps = apps
-                applySortAndShow()
-                binding.progressBar.visibility = View.GONE
-                binding.recyclerApps.visibility = View.VISIBLE
-            }
+            if (isFinishing || isDestroyed) return@launch
+            allApps = apps
+            applySortAndShow()
+            binding.progressBar.visibility = View.GONE
+            binding.recyclerApps.visibility = View.VISIBLE
         }
     }
 
