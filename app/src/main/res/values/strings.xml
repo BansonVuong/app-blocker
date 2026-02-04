@@ -33,6 +33,14 @@
     <string name="permissions_required">Permissions Required</string>
     <string name="combined_quota">Combined quota for all apps</string>
     <string name="allow_override">Allow override</string>
+    <string name="intervention_label">Intervention:</string>
+    <string name="intervention_none">No intervention</string>
+    <string name="intervention_random_32">Random 32 character password required for intervention</string>
+    <string name="intervention_random_64">Random 64 character password required for intervention</string>
+    <string name="intervention_random_128">Random 128 character password required for intervention</string>
+    <string name="intervention_required_title">Intervention Required</string>
+    <string name="intervention_required_message">Complete the intervention to open this app.</string>
+    <string name="intervention_password_incorrect">Incorrect intervention password</string>
     <string name="override">Override</string>
     <string name="cancel_override">Cancel override</string>
     <string name="lockdown">Lockdown</string>
@@ -98,6 +106,13 @@
         <item>20 minutes</item>
         <item>30 minutes</item>
         <item>1 hour</item>
+    </string-array>
+
+    <string-array name="intervention_options">
+        <item>@string/intervention_none</item>
+        <item>@string/intervention_random_32</item>
+        <item>@string/intervention_random_64</item>
+        <item>@string/intervention_random_128</item>
     </string-array>
 
     <string-array name="app_sort_options">

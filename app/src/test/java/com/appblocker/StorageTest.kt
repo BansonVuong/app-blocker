@@ -173,4 +173,15 @@ class StorageTest {
         assertEquals(Storage.LOCKDOWN_CANCEL_PASSWORD, storage.getLockdownCancelAuthMode())
         assertEquals("lock-secret", storage.getLockdownPassword())
     }
+
+    @Test
+    fun interventionBypassIsSingleUse() {
+        val storage = Storage(context)
+
+        assertFalse(storage.consumeInterventionBypass("com.example.app"))
+        storage.grantInterventionBypass("com.example.app")
+
+        assertTrue(storage.consumeInterventionBypass("com.example.app"))
+        assertFalse(storage.consumeInterventionBypass("com.example.app"))
+    }
 }

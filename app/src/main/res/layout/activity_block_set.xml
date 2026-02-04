@@ -96,6 +96,22 @@
                 android:layout_marginTop="8dp"
                 android:text="@string/allow_override" />
 
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/intervention_label"
+                android:textColor="@color/gray"
+                android:textSize="14sp" />
+
+            <Spinner
+                android:id="@+id/spinnerIntervention"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/spinner_background"
+                android:padding="12dp" />
+
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/buttonSelectApps"
                 style="@style/Widget.Material3.Button.OutlinedButton"

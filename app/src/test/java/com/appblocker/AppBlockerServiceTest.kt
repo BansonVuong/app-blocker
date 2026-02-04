@@ -168,6 +168,73 @@ class AppBlockerServiceTest {
         assertNull(intent)
     }
 
+    @Test
+    fun launchesInterventionScreenWhenBlockSetRequiresIntervention() {
+        val blockSet = BlockSet(
+            name = "Focus",
+            apps = mutableListOf("com.example.blocked"),
+            quotaMinutes = 30.0,
+            windowMinutes = 60,
+            intervention = BlockSet.INTERVENTION_RANDOM_32
+        )
+        storage.saveBlockSets(listOf(blockSet))
+
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        service.onAccessibilityEvent(createWindowStateChangedEvent("com.example.blocked"))
+
+        val intent = Shadows.shadowOf(app).nextStartedActivity
+        assertEquals(BlockedActivity::class.java.name, intent.component?.className)
+        assertEquals(BlockedActivity.MODE_INTERVENTION, intent.getIntExtra(BlockedActivity.EXTRA_MODE, -1))
+        assertEquals(
+            BlockSet.INTERVENTION_RANDOM_32,
+            intent.getIntExtra(BlockedActivity.EXTRA_INTERVENTION_MODE, -1)
+        )
+    }
+
+    @Test
+    fun consumesInterventionBypassAndTracksApp() {
+        val blockSet = BlockSet(
+            name = "Focus",
+            apps = mutableListOf("com.example.blocked"),
+            quotaMinutes = 30.0,
+            windowMinutes = 60,
+            intervention = BlockSet.INTERVENTION_RANDOM_32
+        )
+        storage.saveBlockSets(listOf(blockSet))
+        storage.grantInterventionBypass("com.example.blocked")
+
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        service.onAccessibilityEvent(createWindowStateChangedEvent("com.example.blocked"))
+
+        val intent = Shadows.shadowOf(app).nextStartedActivity
+        assertNull(intent)
+        assertEquals("com.example.blocked", getPrivateField(service, "currentTrackedPackage"))
+    }
+
+    @Test
+    fun interventionAuthorizationSurvivesTransientStopTracking() {
+        val blockSet = BlockSet(
+            name = "Focus",
+            apps = mutableListOf("com.example.blocked"),
+            quotaMinutes = 30.0,
+            windowMinutes = 60,
+            intervention = BlockSet.INTERVENTION_RANDOM_32
+        )
+        storage.saveBlockSets(listOf(blockSet))
+        storage.grantInterventionBypass("com.example.blocked")
+
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        service.onAccessibilityEvent(createWindowStateChangedEvent("com.example.blocked"))
+        assertNull(Shadows.shadowOf(app).nextStartedActivity)
+
+        val stopTracking = AppBlockerService::class.java.getDeclaredMethod("stopTracking")
+        stopTracking.isAccessible = true
+        stopTracking.invoke(service)
+
+        service.onAccessibilityEvent(createWindowStateChangedEvent("com.example.blocked"))
+        assertNull(Shadows.shadowOf(app).nextStartedActivity)
+    }
+
     // ==================== Overlay Tracking Tests ====================
 
     @Test

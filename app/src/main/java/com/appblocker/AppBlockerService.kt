@@ -32,6 +32,7 @@ class AppBlockerService : AccessibilityService() {
     private var currentBlockSet: BlockSet? = null
     private var overlayUpdateRunnable: Runnable? = null
     private var pendingStopRunnable: Runnable? = null
+    private var interventionAuthorizedPackage: String? = null
     private lateinit var overlayController: OverlayController
     private lateinit var screenStateTracker: ScreenStateTracker
     private var debugOverlayPrefListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
@@ -145,6 +146,7 @@ class AppBlockerService : AccessibilityService() {
 
         if (packageName == "com.android.launcher" ||
             packageName.contains("launcher")) {
+            interventionAuthorizedPackage = null
             stopTracking()
             return
         }
@@ -180,6 +182,19 @@ class AppBlockerService : AccessibilityService() {
         if (storage.isQuotaExceeded(blockSet) && !overrideActive) {
             logDebug("blocked", "quota exceeded for ${blockSet.name}")
             launchBlockedScreen(blockSet.name, blockSet.id, packageName)
+            stopTracking()
+            return
+        }
+
+        if (!isInterventionAuthorized(packageName, blockSet)) {
+            logDebug("blocked", "intervention required for ${blockSet.name}")
+            launchBlockedScreen(
+                blockSetName = blockSet.name,
+                blockSetId = blockSet.id,
+                blockedPackageName = packageName,
+                mode = BlockedActivity.MODE_INTERVENTION,
+                interventionMode = blockSet.intervention
+            )
             stopTracking()
             return
         }
@@ -227,6 +242,7 @@ class AppBlockerService : AccessibilityService() {
         val isLikelyOverlay = isLikelyOverlayPackage(packageName)
 
         if (!isLikelyOverlay) {
+            interventionAuthorizedPackage = null
             // This is a real app that's not blocked - stop tracking immediately
             logDebug("track", "schedule stop due to $packageName (likelyOverlay=$isLikelyOverlay)")
             scheduleStopTracking()
@@ -354,7 +370,9 @@ class AppBlockerService : AccessibilityService() {
     private fun launchBlockedScreen(
         blockSetName: String,
         blockSetId: String? = null,
-        blockedPackageName: String? = null
+        blockedPackageName: String? = null,
+        mode: Int = BlockedActivity.MODE_QUOTA,
+        interventionMode: Int = BlockSet.INTERVENTION_NONE
     ) {
         val intent = Intent(this, BlockedActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -362,8 +380,24 @@ class AppBlockerService : AccessibilityService() {
             putExtra(BlockedActivity.EXTRA_BLOCK_SET_NAME, blockSetName)
             blockSetId?.let { putExtra(BlockedActivity.EXTRA_BLOCK_SET_ID, it) }
             blockedPackageName?.let { putExtra(BlockedActivity.EXTRA_RETURN_PACKAGE, it) }
+            putExtra(BlockedActivity.EXTRA_MODE, mode)
+            putExtra(BlockedActivity.EXTRA_INTERVENTION_MODE, interventionMode)
         }
         startActivity(intent)
+    }
+
+    private fun isInterventionAuthorized(packageName: String, blockSet: BlockSet): Boolean {
+        if (blockSet.intervention == BlockSet.INTERVENTION_NONE) {
+            return true
+        }
+        if (interventionAuthorizedPackage == packageName) {
+            return true
+        }
+        if (storage.consumeInterventionBypass(packageName)) {
+            interventionAuthorizedPackage = packageName
+            return true
+        }
+        return false
     }
 
     /**

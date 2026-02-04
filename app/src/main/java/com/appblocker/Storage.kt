@@ -83,6 +83,7 @@ class Storage(context: Context) {
         private const val KEY_OVERRIDE_PASSWORD = "override_password"
         private const val KEY_SETTINGS_AUTH_MODE = "settings_auth_mode"
         private const val KEY_SETTINGS_PASSWORD = "settings_password"
+        private const val KEY_INTERVENTION_BYPASS_PREFIX = "intervention_bypass_"
         private const val OVERLAY_POS_UNSET = Int.MIN_VALUE
         private const val VIRTUAL_SESSION_MAX_AGE_MS = 7L * 24 * 60 * 60 * 1000
 
@@ -373,6 +374,19 @@ class Storage(context: Context) {
 
     fun setSettingsPassword(password: String) {
         prefs.edit().putString(KEY_SETTINGS_PASSWORD, password).apply()
+    }
+
+    fun grantInterventionBypass(packageName: String) {
+        prefs.edit().putBoolean(KEY_INTERVENTION_BYPASS_PREFIX + packageName, true).apply()
+    }
+
+    fun consumeInterventionBypass(packageName: String): Boolean {
+        val key = KEY_INTERVENTION_BYPASS_PREFIX + packageName
+        val allowed = prefs.getBoolean(key, false)
+        if (allowed) {
+            prefs.edit().remove(key).apply()
+        }
+        return allowed
     }
 
     fun clearOverride(blockSetId: String) {

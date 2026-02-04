@@ -54,21 +54,26 @@ fun Context.showPasswordDialog(
         addView(inputLayout)
     }
 
-    MaterialAlertDialogBuilder(this)
+    val dialog = MaterialAlertDialogBuilder(this)
         .setTitle(header)
         .setView(container)
-        .setPositiveButton(positiveButtonResId) { _, _ ->
-            val entered = input.text?.toString() ?: ""
-            if (entered != expectedPassword) {
-                Toast.makeText(this, getString(incorrectToastResId), Toast.LENGTH_SHORT).show()
-                return@setPositiveButton
-            }
-            onAuthorized()
-        }
+        .setPositiveButton(positiveButtonResId, null)
         .setNegativeButton(android.R.string.cancel) { _, _ ->
             onCancelled?.invoke()
         }
-        .show()
+        .create()
+    dialog.setOnShowListener {
+        dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val entered = input.text?.toString() ?: ""
+            if (entered != expectedPassword) {
+                Toast.makeText(this, getString(incorrectToastResId), Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            dialog.dismiss()
+            onAuthorized()
+        }
+    }
+    dialog.show()
 }
 
 fun Context.showPasswordDialog(

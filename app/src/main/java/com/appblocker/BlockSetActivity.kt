@@ -23,6 +23,12 @@ class BlockSetActivity : AppCompatActivity() {
 
         // Window options in minutes
         val WINDOW_OPTIONS = listOf(5, 10, 15, 20, 30, 60)
+        val INTERVENTION_OPTIONS = listOf(
+            BlockSet.INTERVENTION_NONE,
+            BlockSet.INTERVENTION_RANDOM_32,
+            BlockSet.INTERVENTION_RANDOM_64,
+            BlockSet.INTERVENTION_RANDOM_128
+        )
         private const val DEFAULT_QUOTA_MINUTES = 30.0
     }
 
@@ -56,6 +62,9 @@ class BlockSetActivity : AppCompatActivity() {
                 binding.editName.setText(it.name)
                 binding.editQuota.setText(formatQuotaMinutes(it.quotaMinutes))
                 binding.spinnerWindow.setSelection(WINDOW_OPTIONS.indexOf(it.windowMinutes).coerceAtLeast(0))
+                binding.spinnerIntervention.setSelection(
+                    INTERVENTION_OPTIONS.indexOf(it.intervention).coerceAtLeast(0)
+                )
                 binding.checkCombinedQuota.isChecked = it.combinedQuota
                 binding.checkAllowOverride.isChecked = it.allowOverride
                 selectedApps = it.apps.toMutableList()
@@ -77,6 +86,16 @@ class BlockSetActivity : AppCompatActivity() {
         windowAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         binding.spinnerWindow.adapter = windowAdapter
         binding.spinnerWindow.setSelection(5) // Default to 1 hour
+
+        val interventionLabels = resources.getStringArray(R.array.intervention_options)
+        val interventionAdapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_item,
+            interventionLabels.toList()
+        )
+        interventionAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        binding.spinnerIntervention.adapter = interventionAdapter
+        binding.spinnerIntervention.setSelection(0)
     }
 
 
@@ -140,6 +159,8 @@ class BlockSetActivity : AppCompatActivity() {
 
         val windowIndex = binding.spinnerWindow.selectedItemPosition
         val window = WINDOW_OPTIONS[windowIndex]
+        val interventionIndex = binding.spinnerIntervention.selectedItemPosition
+        val intervention = INTERVENTION_OPTIONS[interventionIndex]
         val combinedQuota = binding.checkCombinedQuota.isChecked
         val allowOverride = binding.checkAllowOverride.isChecked
 
@@ -155,6 +176,7 @@ class BlockSetActivity : AppCompatActivity() {
                     windowMinutes = window,
                     combinedQuota = combinedQuota,
                     allowOverride = allowOverride,
+                    intervention = intervention,
                     apps = selectedApps
                 )
             }
@@ -166,6 +188,7 @@ class BlockSetActivity : AppCompatActivity() {
                 windowMinutes = window,
                 combinedQuota = combinedQuota,
                 allowOverride = allowOverride,
+                intervention = intervention,
                 apps = selectedApps
             )
             blockSets.add(newBlockSet)
