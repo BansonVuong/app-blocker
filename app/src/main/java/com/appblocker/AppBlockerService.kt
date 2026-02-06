@@ -37,6 +37,8 @@ class AppBlockerService : AccessibilityService() {
     private lateinit var screenStateTracker: ScreenStateTracker
     private var debugOverlayPrefListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
     private var lastBlockedEventTimeMs: Long = 0
+    private var lastBlockedScreenKey: String? = null
+    private var lastBlockedScreenLaunchMs: Long = 0
     private val snapchatDetector = SnapchatDetector()
     private val instagramDetector = InstagramDetector()
     private val youtubeDetector = YouTubeDetector()
@@ -61,6 +63,7 @@ class AppBlockerService : AccessibilityService() {
         private const val YOUTUBE_DETECTION_INTERVAL_MS = 400L
         private const val BROWSER_DETECTION_INTERVAL_MS = 400L
         private const val LOG_TAG = "AppBlockerOverlay"
+        private const val BLOCKED_SCREEN_DEDUP_WINDOW_MS = 1_500L
     }
 
     override fun onCreate() {
@@ -374,6 +377,22 @@ class AppBlockerService : AccessibilityService() {
         mode: Int = BlockedActivity.MODE_QUOTA,
         interventionMode: Int = BlockSet.INTERVENTION_NONE
     ) {
+        val launchKey = listOf(
+            blockSetId ?: "",
+            blockedPackageName ?: "",
+            mode.toString(),
+            interventionMode.toString()
+        ).joinToString("|")
+        val nowMs = System.currentTimeMillis()
+        if (lastBlockedScreenKey == launchKey &&
+            (nowMs - lastBlockedScreenLaunchMs) < BLOCKED_SCREEN_DEDUP_WINDOW_MS
+        ) {
+            logDebug("blocked", "skip duplicate blocked screen launch for $launchKey")
+            return
+        }
+        lastBlockedScreenKey = launchKey
+        lastBlockedScreenLaunchMs = nowMs
+
         val intent = Intent(this, BlockedActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -592,7 +611,7 @@ class AppBlockerService : AccessibilityService() {
      */
     private fun resolveInAppBrowserPackage(packageName: String, className: String?): String? {
         if (packageName in inAppBrowserIgnorePackages) return null
-        if (isBrowserPackage(packageName)) return packageName
+        if (isBrowserPackage(packageName)) return null
         if (!isInAppBrowserClass(className)) return null
         return getBrowserPackageForInAppBrowser(className ?: "")
     }
@@ -907,6 +926,7 @@ class AppBlockerService : AccessibilityService() {
     private inner class BrowserIncognitoDetector {
         private var lastDetectionMs: Long = 0
         private var lastIsIncognito: Boolean = false
+        private var lastIncognitoDetectionMs: Long = 0
 
         fun detect(
             eventType: Int,
@@ -923,6 +943,8 @@ class AppBlockerService : AccessibilityService() {
 
             lastDetectionMs = nowMs
             val rootNode = root ?: return lastIsIncognito
+            val rootPackage = rootNode.packageName?.toString().orEmpty()
+            var foundNonIncognitoMarker = false
             val queue: ArrayDeque<android.view.accessibility.AccessibilityNodeInfo> = ArrayDeque()
             queue.add(rootNode)
             while (queue.isNotEmpty()) {
@@ -933,20 +955,39 @@ class AppBlockerService : AccessibilityService() {
 
                 if (viewId != null && isIncognitoIndicator(viewId)) {
                     lastIsIncognito = true
+                    lastIncognitoDetectionMs = nowMs
                     return true
                 }
                 if (text != null && isIncognitoIndicator(text)) {
                     lastIsIncognito = true
+                    lastIncognitoDetectionMs = nowMs
                     return true
                 }
                 if (description != null && isIncognitoIndicator(description)) {
                     lastIsIncognito = true
+                    lastIncognitoDetectionMs = nowMs
                     return true
+                }
+                if ((viewId != null && isNonIncognitoIndicator(viewId)) ||
+                    (text != null && isNonIncognitoIndicator(text)) ||
+                    (description != null && isNonIncognitoIndicator(description))
+                ) {
+                    foundNonIncognitoMarker = true
                 }
 
                 for (i in 0 until node.childCount) {
                     node.getChild(i)?.let { queue.add(it) }
                 }
+            }
+
+            // Firefox often omits private markers on some updates; keep the last true result briefly
+            // unless we explicitly observe a non-private tab marker.
+            if (!foundNonIncognitoMarker &&
+                isFirefoxPackage(rootPackage) &&
+                lastIsIncognito &&
+                (nowMs - lastIncognitoDetectionMs) <= 5_000L
+            ) {
+                return true
             }
 
             lastIsIncognito = false
@@ -956,11 +997,34 @@ class AppBlockerService : AccessibilityService() {
         private fun isIncognitoIndicator(value: String): Boolean {
             if (value.contains("incognito")) return true
             if (value.contains("inprivate")) return true
+
+            // Some browsers expose identifiers like "privateBrowsingIndicator" or
+            // "private_mode" where phrase separators are removed or replaced.
+            val compact = value.replace(Regex("[^a-z0-9]"), "")
+            if (compact.contains("privatebrowsing")) return true
+            if (compact.contains("privatetab")) return true
+            if (compact.contains("privatemode")) return true
+            if (compact.contains("secretmode")) return true
+
             if (value.contains("secret mode")) return true
             if (value.contains("private browsing")) return true
             if (value.contains("private tab")) return true
+            if (value.contains("private tabs open")) return true
             if (value.contains("private mode")) return true
             return false
+        }
+
+        private fun isNonIncognitoIndicator(value: String): Boolean {
+            return value.contains("tabs open:") &&
+                !value.contains("private") &&
+                !value.contains("incognito") &&
+                !value.contains("inprivate")
+        }
+
+        private fun isFirefoxPackage(packageName: String): Boolean {
+            return packageName == "org.mozilla.firefox" ||
+                packageName == "org.mozilla.firefox_beta" ||
+                packageName == "org.mozilla.fenix"
         }
     }
 

@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Typeface
 import android.text.InputType
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -17,6 +18,7 @@ fun Context.showPasswordDialog(
     message: String,
     expectedPassword: String,
     displayPassword: Boolean,
+    secureContent: Boolean = displayPassword,
     @StringRes incorrectToastResId: Int,
     @StringRes positiveButtonResId: Int,
     inputType: Int = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD,
@@ -63,6 +65,9 @@ fun Context.showPasswordDialog(
         }
         .create()
     dialog.setOnShowListener {
+        if (secureContent) {
+            dialog.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
         dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
             val entered = input.text?.toString() ?: ""
             if (entered != expectedPassword) {
@@ -81,6 +86,7 @@ fun Context.showPasswordDialog(
     message: String,
     expectedPassword: String,
     displayPassword: Boolean,
+    secureContent: Boolean = displayPassword,
     @StringRes incorrectToastResId: Int,
     @StringRes positiveButtonResId: Int,
     inputType: Int = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD,
@@ -91,6 +97,7 @@ fun Context.showPasswordDialog(
     message = message,
     expectedPassword = expectedPassword,
     displayPassword = displayPassword,
+    secureContent = secureContent,
     incorrectToastResId = incorrectToastResId,
     positiveButtonResId = positiveButtonResId,
     inputType = inputType,

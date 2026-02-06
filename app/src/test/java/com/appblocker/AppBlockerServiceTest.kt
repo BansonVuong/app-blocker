@@ -65,6 +65,8 @@ class AppBlockerServiceTest {
     private fun buildNode(
         viewId: String? = null,
         text: String? = null,
+        contentDesc: String? = null,
+        packageName: String? = null,
         bounds: Rect? = null
     ): AccessibilityNodeInfo {
         val node = AccessibilityNodeInfo.obtain()
@@ -73,6 +75,12 @@ class AppBlockerServiceTest {
         }
         if (text != null) {
             node.text = text
+        }
+        if (contentDesc != null) {
+            node.contentDescription = contentDesc
+        }
+        if (packageName != null) {
+            node.packageName = packageName
         }
         if (bounds != null) {
             node.setBoundsInScreen(bounds)
@@ -115,8 +123,31 @@ class AppBlockerServiceTest {
         return method.invoke(detector, eventType, nowMs, root) as Boolean
     }
 
+    private fun resolveInAppBrowserPackage(
+        service: AppBlockerService,
+        packageName: String,
+        className: String?
+    ): String? {
+        val method = AppBlockerService::class.java.getDeclaredMethod(
+            "resolveInAppBrowserPackage",
+            String::class.java,
+            String::class.java
+        )
+        method.isAccessible = true
+        return method.invoke(service, packageName, className) as String?
+    }
+
     private fun addChild(parent: AccessibilityNodeInfo, child: AccessibilityNodeInfo) {
         Shadows.shadowOf(parent).addChild(child)
+    }
+
+    private fun drainStartedActivitiesCount(): Int {
+        val shadowApp = Shadows.shadowOf(app)
+        var count = 0
+        while (shadowApp.nextStartedActivity != null) {
+            count++
+        }
+        return count
     }
 
     @Test
@@ -189,6 +220,25 @@ class AppBlockerServiceTest {
             BlockSet.INTERVENTION_RANDOM_32,
             intent.getIntExtra(BlockedActivity.EXTRA_INTERVENTION_MODE, -1)
         )
+    }
+
+    @Test
+    fun doesNotRelaunchInterventionScreenForRapidDuplicateEvents() {
+        val blockSet = BlockSet(
+            name = "Focus",
+            apps = mutableListOf("com.example.blocked"),
+            quotaMinutes = 30.0,
+            windowMinutes = 60,
+            intervention = BlockSet.INTERVENTION_RANDOM_32
+        )
+        storage.saveBlockSets(listOf(blockSet))
+
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        service.onAccessibilityEvent(createWindowStateChangedEvent("com.example.blocked"))
+        service.onAccessibilityEvent(createWindowStateChangedEvent("com.example.blocked"))
+        service.onAccessibilityEvent(createWindowStateChangedEvent("com.example.blocked"))
+
+        assertEquals(1, drainStartedActivitiesCount())
     }
 
     @Test
@@ -430,6 +480,78 @@ class AppBlockerServiceTest {
         )
 
         assertTrue(isIncognito)
+    }
+
+    @Test
+    fun browserIncognitoDetectorDetectsFirefoxStylePrivateBrowsingViewId() {
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        val root = buildNode()
+        val firefoxPrivateNode = buildNode(viewId = "org.mozilla.firefox:id/privateBrowsingIndicator")
+        addChild(root, firefoxPrivateNode)
+
+        val isIncognito = detectBrowserIncognito(
+            service,
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
+            1000L,
+            root
+        )
+
+        assertTrue(isIncognito)
+    }
+
+    @Test
+    fun browserIncognitoDetectorDetectsFirefoxPrivateTabsDescription() {
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        val root = buildNode(packageName = "org.mozilla.firefox")
+        val firefoxPrivateTabs = buildNode(contentDesc = "Private Tabs Open: 1. Tap to switch tabs.")
+        addChild(root, firefoxPrivateTabs)
+
+        val isIncognito = detectBrowserIncognito(
+            service,
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
+            1000L,
+            root
+        )
+
+        assertTrue(isIncognito)
+    }
+
+    @Test
+    fun browserIncognitoDetectorKeepsFirefoxPrivateStateWhenMarkerBrieflyMissing() {
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        val privateRoot = buildNode(packageName = "org.mozilla.firefox")
+        addChild(privateRoot, buildNode(contentDesc = "Private Tabs Open: 1. Tap to switch tabs."))
+
+        val firstIsIncognito = detectBrowserIncognito(
+            service,
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
+            1000L,
+            privateRoot
+        )
+
+        val markerMissingRoot = buildNode(packageName = "org.mozilla.firefox")
+        val secondIsIncognito = detectBrowserIncognito(
+            service,
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
+            1800L,
+            markerMissingRoot
+        )
+
+        assertTrue(firstIsIncognito)
+        assertTrue(secondIsIncognito)
+    }
+
+    @Test
+    fun resolveInAppBrowserPackageReturnsNullForRealBrowserPackage() {
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+
+        val resolved = resolveInAppBrowserPackage(
+            service,
+            "org.mozilla.firefox",
+            "org.mozilla.fenix.HomeActivity"
+        )
+
+        assertNull(resolved)
     }
 
     @Test
