@@ -209,13 +209,10 @@ class MainActivity : AppCompatActivity() {
     private fun refreshData() {
         val blockSets = storage.getBlockSets()
         val blockSetIds = blockSets.map { it.id }
-        val blockSetsChanged = blockSetIds != lastBlockSetIds
-        if (blockSetsChanged) {
-            adapter.setData(blockSets, storage)
-            binding.textEmpty.visibility = if (blockSets.isEmpty()) View.VISIBLE else View.GONE
-            binding.recyclerBlockSets.visibility = if (blockSets.isEmpty()) View.GONE else View.VISIBLE
-            lastBlockSetIds = blockSetIds
-        }
+        adapter.setData(blockSets, storage)
+        binding.textEmpty.visibility = if (blockSets.isEmpty()) View.VISIBLE else View.GONE
+        binding.recyclerBlockSets.visibility = if (blockSets.isEmpty()) View.GONE else View.VISIBLE
+        lastBlockSetIds = blockSetIds
         updateActionButtons(blockSets)
     }
 
