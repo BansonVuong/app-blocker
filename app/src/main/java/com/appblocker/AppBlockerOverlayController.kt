@@ -120,6 +120,7 @@ class AppBlockerOverlayController(
     @SuppressLint("ClickableViewAccessibility")
     private fun ensureOverlayView(): TextView {
         if (overlayView != null) return overlayView!!
+        clearStaleOverlayReference()
 
         val view = TextView(context)
         view.setTextColor(Color.WHITE)
@@ -184,6 +185,7 @@ class AppBlockerOverlayController(
     @SuppressLint("ClickableViewAccessibility")
     private fun ensureDebugOverlayView(): TextView {
         if (debugOverlayView != null) return debugOverlayView!!
+        clearStaleDebugOverlayReference()
 
         val view = TextView(context)
         view.setTextColor(Color.YELLOW)
@@ -245,11 +247,25 @@ class AppBlockerOverlayController(
     private fun removeViewSafely(view: TextView?) {
         if (view == null) return
         try {
-            if (view.isAttachedToWindow) {
-                windowManager.removeView(view)
-            }
+            windowManager.removeView(view)
         } catch (_: IllegalArgumentException) {
-            // View already removed or not attached.
+            // View may already be detached from the regular remove path; force immediate cleanup.
+            try {
+                windowManager.removeViewImmediate(view)
+            } catch (_: IllegalArgumentException) {
+                // View already removed or not attached.
+            }
         }
+    }
+
+    private fun clearStaleOverlayReference() {
+        removeViewSafely(overlayView)
+        overlayView = null
+        overlayLayoutParams = null
+    }
+
+    private fun clearStaleDebugOverlayReference() {
+        removeViewSafely(debugOverlayView)
+        debugOverlayView = null
     }
 }
