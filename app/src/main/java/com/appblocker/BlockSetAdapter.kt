@@ -61,6 +61,15 @@ class BlockSetAdapter(
                 }
             }
 
+            if (blockSet.scheduleEnabled && !blockSet.isScheduleActive()) {
+                binding.textRemaining.text = binding.root.context.getString(R.string.schedule_inactive)
+                binding.progressQuota.progress = 0
+                binding.progressQuota.setIndicatorColor(
+                    binding.root.context.getColor(R.color.gray)
+                )
+                return
+            }
+
             val remainingSeconds = storage.getRemainingSeconds(blockSet)
             val overrideSeconds = storage.getOverrideRemainingSeconds(blockSet)
             val displaySeconds = if (overrideSeconds > 0) overrideSeconds else remainingSeconds

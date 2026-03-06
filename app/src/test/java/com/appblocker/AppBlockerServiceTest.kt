@@ -44,6 +44,13 @@ class AppBlockerServiceTest {
         }
     }
 
+    private fun createWindowContentChangedEvent(packageName: String): AccessibilityEvent {
+        return AccessibilityEvent.obtain().apply {
+            eventType = AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+            this.packageName = packageName
+        }
+    }
+
     private fun getPrivateField(service: AppBlockerService, fieldName: String): Any? {
         val field = AppBlockerService::class.java.getDeclaredField(fieldName)
         field.isAccessible = true
@@ -60,6 +67,15 @@ class AppBlockerServiceTest {
         val field = instance.javaClass.getDeclaredField(fieldName)
         field.isAccessible = true
         return field.get(instance)
+    }
+
+    private fun invokeHandleUnblockedAppSwitch(service: AppBlockerService, packageName: String) {
+        val method = AppBlockerService::class.java.getDeclaredMethod(
+            "handleUnblockedAppSwitch",
+            String::class.java
+        )
+        method.isAccessible = true
+        method.invoke(service, packageName)
     }
 
     private fun buildNode(
@@ -103,7 +119,7 @@ class AppBlockerServiceTest {
         )
         method.isAccessible = true
         val result = method.invoke(detector, eventType, nowMs, root)
-        return result.toString()
+        return checkNotNull(result) { "snapchatDetector.detect returned null" }.toString()
     }
 
     private fun detectBrowserIncognito(
@@ -206,7 +222,7 @@ class AppBlockerServiceTest {
             apps = mutableListOf("com.example.blocked"),
             quotaMinutes = 30.0,
             windowMinutes = 60,
-            intervention = BlockSet.INTERVENTION_RANDOM_32
+            intervention = BlockSet.INTERVENTION_RANDOM
         )
         storage.saveBlockSets(listOf(blockSet))
 
@@ -217,7 +233,7 @@ class AppBlockerServiceTest {
         assertEquals(BlockedActivity::class.java.name, intent.component?.className)
         assertEquals(BlockedActivity.MODE_INTERVENTION, intent.getIntExtra(BlockedActivity.EXTRA_MODE, -1))
         assertEquals(
-            BlockSet.INTERVENTION_RANDOM_32,
+            BlockSet.INTERVENTION_RANDOM,
             intent.getIntExtra(BlockedActivity.EXTRA_INTERVENTION_MODE, -1)
         )
     }
@@ -229,7 +245,7 @@ class AppBlockerServiceTest {
             apps = mutableListOf("com.example.blocked"),
             quotaMinutes = 30.0,
             windowMinutes = 60,
-            intervention = BlockSet.INTERVENTION_RANDOM_32
+            intervention = BlockSet.INTERVENTION_RANDOM
         )
         storage.saveBlockSets(listOf(blockSet))
 
@@ -242,13 +258,36 @@ class AppBlockerServiceTest {
     }
 
     @Test
+    fun relaunchesInterventionWhenForegroundReturnsViaContentChangedEvent() {
+        val blockSet = BlockSet(
+            name = "Focus",
+            apps = mutableListOf("org.mozilla.fenix"),
+            quotaMinutes = 30.0,
+            windowMinutes = 60,
+            intervention = BlockSet.INTERVENTION_RANDOM
+        )
+        storage.saveBlockSets(listOf(blockSet))
+
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+
+        service.onAccessibilityEvent(createWindowStateChangedEvent("org.mozilla.fenix"))
+        service.onAccessibilityEvent(createWindowStateChangedEvent("com.appblocker"))
+        drainStartedActivitiesCount()
+        setPrivateField(service, "lastBlockedScreenLaunchMs", 0L)
+
+        service.onAccessibilityEvent(createWindowContentChangedEvent("org.mozilla.fenix"))
+
+        assertEquals(1, drainStartedActivitiesCount())
+    }
+
+    @Test
     fun consumesInterventionBypassAndTracksApp() {
         val blockSet = BlockSet(
             name = "Focus",
             apps = mutableListOf("com.example.blocked"),
             quotaMinutes = 30.0,
             windowMinutes = 60,
-            intervention = BlockSet.INTERVENTION_RANDOM_32
+            intervention = BlockSet.INTERVENTION_RANDOM
         )
         storage.saveBlockSets(listOf(blockSet))
         storage.grantInterventionBypass("com.example.blocked")
@@ -268,7 +307,7 @@ class AppBlockerServiceTest {
             apps = mutableListOf("com.example.blocked"),
             quotaMinutes = 30.0,
             windowMinutes = 60,
-            intervention = BlockSet.INTERVENTION_RANDOM_32
+            intervention = BlockSet.INTERVENTION_RANDOM
         )
         storage.saveBlockSets(listOf(blockSet))
         storage.grantInterventionBypass("com.example.blocked")
@@ -680,6 +719,36 @@ class AppBlockerServiceTest {
     }
 
     @Test
+    fun sameFamilyVirtualToParentDoesNotScheduleStopOrClearInterventionAuthorization() {
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        setPrivateField(service, "currentTrackedPackage", "org.mozilla.fenix:private")
+        setPrivateField(service, "interventionAuthorizedPackage", "org.mozilla.fenix:private")
+
+        invokeHandleUnblockedAppSwitch(service, "org.mozilla.fenix")
+
+        val pendingStopRunnable = getPrivateField(service, "pendingStopRunnable")
+        val interventionAuthorizedPackage =
+            getPrivateField(service, "interventionAuthorizedPackage") as String?
+        assertNull(pendingStopRunnable)
+        assertEquals("org.mozilla.fenix:private", interventionAuthorizedPackage)
+    }
+
+    @Test
+    fun sameFamilyParentToVirtualDoesNotScheduleStop() {
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        setPrivateField(service, "currentTrackedPackage", "org.mozilla.fenix")
+        setPrivateField(service, "interventionAuthorizedPackage", "org.mozilla.fenix")
+
+        invokeHandleUnblockedAppSwitch(service, "org.mozilla.fenix:private")
+
+        val pendingStopRunnable = getPrivateField(service, "pendingStopRunnable")
+        val interventionAuthorizedPackage =
+            getPrivateField(service, "interventionAuthorizedPackage") as String?
+        assertNull(pendingStopRunnable)
+        assertEquals("org.mozilla.fenix", interventionAuthorizedPackage)
+    }
+
+    @Test
     fun switchesBetweenBlockedApps() {
         val blockSets = listOf(
             BlockSet(
@@ -934,4 +1003,5 @@ class AppBlockerServiceTest {
         assertEquals(storage.getRemainingSeconds(blockSet), refreshedRemaining)
         assertTrue(refreshedWindowEnd >= System.currentTimeMillis())
     }
+
 }

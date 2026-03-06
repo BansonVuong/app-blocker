@@ -89,16 +89,45 @@ class Storage(context: Context) {
 
         const val OVERRIDE_AUTH_NONE = 0
         const val OVERRIDE_AUTH_PASSWORD = 1
-        const val OVERRIDE_AUTH_RANDOM_32 = 2
-        const val OVERRIDE_AUTH_RANDOM_64 = 3
-        const val OVERRIDE_AUTH_RANDOM_128 = 4
+        const val OVERRIDE_AUTH_RANDOM = 2
 
         const val LOCKDOWN_CANCEL_DISABLED = 0
         const val LOCKDOWN_CANCEL_PASSWORD = 1
-        const val LOCKDOWN_CANCEL_RANDOM_32 = 2
-        const val LOCKDOWN_CANCEL_RANDOM_64 = 3
-        const val LOCKDOWN_CANCEL_RANDOM_128 = 4
+        const val LOCKDOWN_CANCEL_RANDOM = 2
+
+        private const val KEY_OVERRIDE_RANDOM_CODE_LENGTH = "override_random_code_length"
+        private const val KEY_LOCKDOWN_RANDOM_CODE_LENGTH = "lockdown_random_code_length"
+        private const val KEY_SETTINGS_RANDOM_CODE_LENGTH = "settings_random_code_length"
+        private const val DEFAULT_RANDOM_CODE_LENGTH = 32
     }
+
+    private data class AuthPrefsConfig(
+        val modeKey: String,
+        val passwordKey: String,
+        val randomCodeLengthKey: String,
+        val defaultMode: Int
+    )
+
+    private val overrideAuthConfig = AuthPrefsConfig(
+        modeKey = KEY_OVERRIDE_AUTH_MODE,
+        passwordKey = KEY_OVERRIDE_PASSWORD,
+        randomCodeLengthKey = KEY_OVERRIDE_RANDOM_CODE_LENGTH,
+        defaultMode = OVERRIDE_AUTH_NONE
+    )
+
+    private val lockdownAuthConfig = AuthPrefsConfig(
+        modeKey = KEY_LOCKDOWN_AUTH_MODE,
+        passwordKey = KEY_LOCKDOWN_PASSWORD,
+        randomCodeLengthKey = KEY_LOCKDOWN_RANDOM_CODE_LENGTH,
+        defaultMode = LOCKDOWN_CANCEL_DISABLED
+    )
+
+    private val settingsAuthConfig = AuthPrefsConfig(
+        modeKey = KEY_SETTINGS_AUTH_MODE,
+        passwordKey = KEY_SETTINGS_PASSWORD,
+        randomCodeLengthKey = KEY_SETTINGS_RANDOM_CODE_LENGTH,
+        defaultMode = OVERRIDE_AUTH_NONE
+    )
 
     // ===== Debug-only prefs (easy to remove) =====
     fun isDebugOverlayEnabled(): Boolean {
@@ -106,7 +135,7 @@ class Storage(context: Context) {
     }
 
     fun setDebugOverlayEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_DEBUG_OVERLAY_ENABLED, enabled).apply()
+        putBoolean(KEY_DEBUG_OVERLAY_ENABLED, enabled)
     }
 
     fun isDebugLogCaptureEnabled(): Boolean {
@@ -114,7 +143,7 @@ class Storage(context: Context) {
     }
 
     fun setDebugLogCaptureEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_DEBUG_LOG_CAPTURE_ENABLED, enabled).apply()
+        putBoolean(KEY_DEBUG_LOG_CAPTURE_ENABLED, enabled)
     }
     // ===== End debug-only prefs =====
 
@@ -138,13 +167,25 @@ class Storage(context: Context) {
 
     fun saveBlockSets(blockSets: List<BlockSet>) {
         val json = gson.toJson(blockSets)
-        prefs.edit().putString(KEY_BLOCK_SETS, json).apply()
+        putString(KEY_BLOCK_SETS, json)
     }
 
     fun getBlockSets(): MutableList<BlockSet> {
         val json = prefs.getString(KEY_BLOCK_SETS, null) ?: return mutableListOf()
         val type = object : TypeToken<MutableList<BlockSet>>() {}.type
-        return gson.fromJson(json, type) ?: mutableListOf()
+        val blockSets: MutableList<BlockSet> = gson.fromJson(json, type) ?: return mutableListOf()
+        var needsSave = false
+        for (bs in blockSets) {
+            when (bs.intervention) {
+                2 -> { bs.intervention = BlockSet.INTERVENTION_RANDOM; bs.interventionCodeLength = 64; needsSave = true }
+                3 -> { bs.intervention = BlockSet.INTERVENTION_RANDOM; bs.interventionCodeLength = 128; needsSave = true }
+                BlockSet.INTERVENTION_RANDOM -> {
+                    if (bs.interventionCodeLength <= 0) { bs.interventionCodeLength = 32; needsSave = true }
+                }
+            }
+        }
+        if (needsSave) saveBlockSets(blockSets)
+        return blockSets
     }
 
     fun getBlockSetForApp(packageName: String): BlockSet? {
@@ -273,7 +314,7 @@ class Storage(context: Context) {
     ) {
         val durationMs = minutes * 60 * 1000L
         val endMs = nowMs + durationMs
-        prefs.edit().putLong(KEY_OVERRIDE_END_PREFIX + blockSetId, endMs).apply()
+        putLong(KEY_OVERRIDE_END_PREFIX + blockSetId, endMs)
     }
 
     fun setLockdownHours(
@@ -282,115 +323,104 @@ class Storage(context: Context) {
     ) {
         val durationMs = hours * 60L * 60L * 1000L
         val endMs = nowMs + durationMs
-        prefs.edit().putLong(KEY_LOCKDOWN_END, endMs).apply()
+        putLong(KEY_LOCKDOWN_END, endMs)
     }
 
     fun getLockdownCancelAuthMode(): Int {
-        return prefs.getInt(KEY_LOCKDOWN_AUTH_MODE, LOCKDOWN_CANCEL_DISABLED)
+        return getAuthMode(lockdownAuthConfig)
     }
 
     fun setLockdownCancelAuthMode(mode: Int) {
-        prefs.edit().putInt(KEY_LOCKDOWN_AUTH_MODE, mode).apply()
+        setAuthMode(lockdownAuthConfig, mode)
     }
 
     fun getLockdownPassword(): String {
-        return prefs.getString(KEY_LOCKDOWN_PASSWORD, "") ?: ""
+        return getAuthPassword(lockdownAuthConfig)
     }
 
     fun setLockdownPassword(password: String) {
-        prefs.edit().putString(KEY_LOCKDOWN_PASSWORD, password).apply()
+        setAuthPassword(lockdownAuthConfig, password)
     }
 
+    fun getLockdownRandomCodeLength(): Int = getAuthRandomCodeLength(lockdownAuthConfig)
+    fun setLockdownRandomCodeLength(length: Int) { setAuthRandomCodeLength(lockdownAuthConfig, length) }
+
     fun clearLockdown() {
-        prefs.edit().remove(KEY_LOCKDOWN_END).apply()
+        removeKey(KEY_LOCKDOWN_END)
     }
 
     fun isLockdownActive(
         nowMs: Long = System.currentTimeMillis()
     ): Boolean {
-        val endMs = prefs.getLong(KEY_LOCKDOWN_END, 0L)
-        if (endMs <= nowMs) {
-            if (endMs > 0L) {
-                clearLockdown()
-            }
-            return false
-        }
-        return true
+        return getActiveEndMillis(KEY_LOCKDOWN_END, nowMs, ::clearLockdown) != null
     }
 
     fun getLockdownRemainingSeconds(
         nowMs: Long = System.currentTimeMillis()
     ): Int {
-        val endMs = prefs.getLong(KEY_LOCKDOWN_END, 0L)
-        if (endMs <= nowMs) {
-            if (endMs > 0L) {
-                clearLockdown()
-            }
-            return 0
-        }
+        val endMs = getActiveEndMillis(KEY_LOCKDOWN_END, nowMs, ::clearLockdown) ?: return 0
         return ((endMs - nowMs) / 1000).toInt()
     }
 
     fun getLockdownEndMillis(
         nowMs: Long = System.currentTimeMillis()
     ): Long? {
-        val endMs = prefs.getLong(KEY_LOCKDOWN_END, 0L)
-        if (endMs <= nowMs) {
-            if (endMs > 0L) {
-                clearLockdown()
-            }
-            return null
-        }
-        return endMs
+        return getActiveEndMillis(KEY_LOCKDOWN_END, nowMs, ::clearLockdown)
     }
 
     fun getOverrideAuthMode(): Int {
-        return prefs.getInt(KEY_OVERRIDE_AUTH_MODE, OVERRIDE_AUTH_NONE)
+        return getAuthMode(overrideAuthConfig)
     }
 
     fun setOverrideAuthMode(mode: Int) {
-        prefs.edit().putInt(KEY_OVERRIDE_AUTH_MODE, mode).apply()
+        setAuthMode(overrideAuthConfig, mode)
     }
 
     fun getOverridePassword(): String {
-        return prefs.getString(KEY_OVERRIDE_PASSWORD, "") ?: ""
+        return getAuthPassword(overrideAuthConfig)
     }
 
     fun setOverridePassword(password: String) {
-        prefs.edit().putString(KEY_OVERRIDE_PASSWORD, password).apply()
+        setAuthPassword(overrideAuthConfig, password)
     }
 
+    fun getOverrideRandomCodeLength(): Int = getAuthRandomCodeLength(overrideAuthConfig)
+    fun setOverrideRandomCodeLength(length: Int) { setAuthRandomCodeLength(overrideAuthConfig, length) }
+
     fun getSettingsAuthMode(): Int {
-        return prefs.getInt(KEY_SETTINGS_AUTH_MODE, OVERRIDE_AUTH_NONE)
+        return getAuthMode(settingsAuthConfig)
     }
 
     fun setSettingsAuthMode(mode: Int) {
-        prefs.edit().putInt(KEY_SETTINGS_AUTH_MODE, mode).apply()
+        setAuthMode(settingsAuthConfig, mode)
     }
 
     fun getSettingsPassword(): String {
-        return prefs.getString(KEY_SETTINGS_PASSWORD, "") ?: ""
+        return getAuthPassword(settingsAuthConfig)
     }
 
     fun setSettingsPassword(password: String) {
-        prefs.edit().putString(KEY_SETTINGS_PASSWORD, password).apply()
+        setAuthPassword(settingsAuthConfig, password)
     }
 
+    fun getSettingsRandomCodeLength(): Int = getAuthRandomCodeLength(settingsAuthConfig)
+    fun setSettingsRandomCodeLength(length: Int) { setAuthRandomCodeLength(settingsAuthConfig, length) }
+
     fun grantInterventionBypass(packageName: String) {
-        prefs.edit().putBoolean(KEY_INTERVENTION_BYPASS_PREFIX + packageName, true).apply()
+        putBoolean(KEY_INTERVENTION_BYPASS_PREFIX + packageName, true)
     }
 
     fun consumeInterventionBypass(packageName: String): Boolean {
         val key = KEY_INTERVENTION_BYPASS_PREFIX + packageName
         val allowed = prefs.getBoolean(key, false)
         if (allowed) {
-            prefs.edit().remove(key).apply()
+            removeKey(key)
         }
         return allowed
     }
 
     fun clearOverride(blockSetId: String) {
-        prefs.edit().remove(KEY_OVERRIDE_END_PREFIX + blockSetId).apply()
+        removeKey(KEY_OVERRIDE_END_PREFIX + blockSetId)
     }
 
     fun isOverrideActive(
@@ -398,14 +428,8 @@ class Storage(context: Context) {
         nowMs: Long = System.currentTimeMillis()
     ): Boolean {
         if (!blockSet.allowOverride) return false
-        val endMs = prefs.getLong(KEY_OVERRIDE_END_PREFIX + blockSet.id, 0L)
-        if (endMs <= nowMs) {
-            if (endMs > 0L) {
-                clearOverride(blockSet.id)
-            }
-            return false
-        }
-        return true
+        val key = KEY_OVERRIDE_END_PREFIX + blockSet.id
+        return getActiveEndMillis(key, nowMs) { clearOverride(blockSet.id) } != null
     }
 
     fun getOverrideRemainingSeconds(
@@ -413,13 +437,8 @@ class Storage(context: Context) {
         nowMs: Long = System.currentTimeMillis()
     ): Int {
         if (!blockSet.allowOverride) return 0
-        val endMs = prefs.getLong(KEY_OVERRIDE_END_PREFIX + blockSet.id, 0L)
-        if (endMs <= nowMs) {
-            if (endMs > 0L) {
-                clearOverride(blockSet.id)
-            }
-            return 0
-        }
+        val key = KEY_OVERRIDE_END_PREFIX + blockSet.id
+        val endMs = getActiveEndMillis(key, nowMs) { clearOverride(blockSet.id) } ?: return 0
         return ((endMs - nowMs) / 1000).toInt()
     }
 
@@ -479,6 +498,78 @@ class Storage(context: Context) {
             lastPoint < cutoff
         }
         val json = gson.toJson(sessions)
-        prefs.edit().putString(KEY_VIRTUAL_SESSIONS_PREFIX + packageName, json).apply()
+        putString(KEY_VIRTUAL_SESSIONS_PREFIX + packageName, json)
+    }
+
+    private fun getAuthMode(config: AuthPrefsConfig): Int {
+        val mode = prefs.getInt(config.modeKey, config.defaultMode)
+        return when (mode) {
+            3 -> {
+                setAuthRandomCodeLength(config, 64)
+                setAuthMode(config, OVERRIDE_AUTH_RANDOM)
+                OVERRIDE_AUTH_RANDOM
+            }
+            4 -> {
+                setAuthRandomCodeLength(config, 128)
+                setAuthMode(config, OVERRIDE_AUTH_RANDOM)
+                OVERRIDE_AUTH_RANDOM
+            }
+            else -> mode
+        }
+    }
+
+    private fun setAuthMode(config: AuthPrefsConfig, mode: Int) {
+        putInt(config.modeKey, mode)
+    }
+
+    private fun getAuthPassword(config: AuthPrefsConfig): String {
+        return prefs.getString(config.passwordKey, "") ?: ""
+    }
+
+    private fun setAuthPassword(config: AuthPrefsConfig, password: String) {
+        putString(config.passwordKey, password)
+    }
+
+    private fun getAuthRandomCodeLength(config: AuthPrefsConfig): Int {
+        return prefs.getInt(config.randomCodeLengthKey, DEFAULT_RANDOM_CODE_LENGTH)
+    }
+
+    private fun setAuthRandomCodeLength(config: AuthPrefsConfig, length: Int) {
+        putInt(config.randomCodeLengthKey, length)
+    }
+
+    private fun getActiveEndMillis(
+        key: String,
+        nowMs: Long,
+        clearExpired: () -> Unit
+    ): Long? {
+        val endMs = prefs.getLong(key, 0L)
+        if (endMs <= nowMs) {
+            if (endMs > 0L) {
+                clearExpired()
+            }
+            return null
+        }
+        return endMs
+    }
+
+    private fun putBoolean(key: String, value: Boolean) {
+        prefs.edit().putBoolean(key, value).apply()
+    }
+
+    private fun putString(key: String, value: String) {
+        prefs.edit().putString(key, value).apply()
+    }
+
+    private fun putInt(key: String, value: Int) {
+        prefs.edit().putInt(key, value).apply()
+    }
+
+    private fun putLong(key: String, value: Long) {
+        prefs.edit().putLong(key, value).apply()
+    }
+
+    private fun removeKey(key: String) {
+        prefs.edit().remove(key).apply()
     }
 }

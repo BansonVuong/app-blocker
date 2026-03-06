@@ -40,7 +40,7 @@ class BlockedActivityTest {
         controller.newIntent(
             blockedIntent(
                 mode = BlockedActivity.MODE_INTERVENTION,
-                interventionMode = BlockSet.INTERVENTION_RANDOM_32
+                interventionMode = BlockSet.INTERVENTION_RANDOM
             )
         )
 

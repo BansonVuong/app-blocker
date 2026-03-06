@@ -1,19 +1,39 @@
 package com.appblocker
 
 import android.os.Bundle
+import android.view.View
+import android.widget.AutoCompleteTextView
 import android.widget.ArrayAdapter
+import android.widget.EditText
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.widget.doAfterTextChanged
 import com.appblocker.databinding.ActivitySettingsBinding
-import java.security.SecureRandom
 import android.text.InputType
 
 class SettingsActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivitySettingsBinding
     private lateinit var storage: Storage
-    private val secureRandom = SecureRandom()
     private var unlocked = false
+
+    private data class AuthOption(val label: String, val mode: Int)
+    private data class AuthSectionConfig(
+        val dropdown: AutoCompleteTextView,
+        val passwordField: EditText,
+        val codeLengthField: EditText,
+        val options: List<AuthOption>,
+        val getCurrentMode: () -> Int,
+        val setMode: (Int) -> Unit,
+        val passwordMode: Int,
+        val randomMode: Int,
+        val setPasswordVisibility: (Int) -> Unit,
+        val setCodeLengthVisibility: (Int) -> Unit,
+        val getPassword: () -> String,
+        val setPassword: (String) -> Unit,
+        val getCodeLength: () -> Int,
+        val setCodeLength: (Int) -> Unit
+    )
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivitySettingsBinding.inflate(layoutInflater)
@@ -29,12 +49,7 @@ class SettingsActivity : AppCompatActivity() {
             return
         }
 
-        setupOverrideAuthDropdown()
-        setupPasswordField()
-        setupLockdownAuthDropdown()
-        setupLockdownPasswordField()
-        setupSettingsAuthDropdown()
-        setupSettingsPasswordField()
+        setupAllAuthSections()
     }
 
     private fun ensureSettingsAccess(): Boolean {
@@ -48,203 +63,139 @@ class SettingsActivity : AppCompatActivity() {
         return false
     }
 
-    private fun setupOverrideAuthDropdown() {
-        val options = listOf(
-            getString(R.string.override_auth_mode_none),
-            getString(R.string.override_auth_mode_password),
-            getString(R.string.override_auth_mode_random_32),
-            getString(R.string.override_auth_mode_random_64),
-            getString(R.string.override_auth_mode_random_128)
-        )
-        val adapter = ArrayAdapter(this, R.layout.dropdown_item_two_line, options)
+    private fun setupAllAuthSections() {
+        authSectionConfigs().forEach(::setupAuthSection)
+    }
+
+    private fun setupAuthSection(
+        config: AuthSectionConfig
+    ) {
+        val labels = config.options.map { it.label }
+        val adapter = ArrayAdapter(this, R.layout.dropdown_item_two_line, labels)
         adapter.setDropDownViewResource(R.layout.dropdown_item_two_line)
-        binding.dropdownOverrideAuth.setAdapter(adapter)
+        config.dropdown.setAdapter(adapter)
 
-        val currentMode = storage.getOverrideAuthMode()
-        val initialIndex = when (currentMode) {
-            Storage.OVERRIDE_AUTH_PASSWORD -> 1
-            Storage.OVERRIDE_AUTH_RANDOM_32 -> 2
-            Storage.OVERRIDE_AUTH_RANDOM_64 -> 3
-            Storage.OVERRIDE_AUTH_RANDOM_128 -> 4
-            else -> 0
-        }
-        binding.dropdownOverrideAuth.setText(options[initialIndex], false)
+        val currentMode = config.getCurrentMode()
+        val initialIndex = config.options.indexOfFirst { it.mode == currentMode }.takeIf { it >= 0 } ?: 0
+        config.dropdown.setText(labels[initialIndex], false)
+        updateAuthFieldVisibility(config, currentMode)
 
-        binding.dropdownOverrideAuth.setOnClickListener {
-            binding.dropdownOverrideAuth.showDropDown()
-        }
-        binding.dropdownOverrideAuth.setOnFocusChangeListener { _, hasFocus ->
-            if (hasFocus) {
-                binding.dropdownOverrideAuth.showDropDown()
-            }
+        config.dropdown.setOnClickListener { config.dropdown.showDropDown() }
+        config.dropdown.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) config.dropdown.showDropDown() }
+        config.dropdown.setOnItemClickListener { _, _, position, _ ->
+            val mode = config.options.getOrNull(position)?.mode ?: config.options.first().mode
+            config.setMode(mode)
+            updateAuthFieldVisibility(config, mode)
         }
 
-        binding.dropdownOverrideAuth.setOnItemClickListener { _, _, position, _ ->
-            val mode = when (position) {
-                1 -> Storage.OVERRIDE_AUTH_PASSWORD
-                2 -> Storage.OVERRIDE_AUTH_RANDOM_32
-                3 -> Storage.OVERRIDE_AUTH_RANDOM_64
-                4 -> Storage.OVERRIDE_AUTH_RANDOM_128
-                else -> Storage.OVERRIDE_AUTH_NONE
-            }
-            storage.setOverrideAuthMode(mode)
+        config.passwordField.setText(config.getPassword())
+        config.passwordField.doAfterTextChanged { text ->
+            config.setPassword(text?.toString() ?: "")
+        }
+
+        config.codeLengthField.setText(config.getCodeLength().toString())
+        config.codeLengthField.doAfterTextChanged { text ->
+            val length = text?.toString()?.toIntOrNull() ?: return@doAfterTextChanged
+            if (length > 0) config.setCodeLength(length)
         }
     }
 
-    private fun setupPasswordField() {
-        binding.editOverridePassword.setText(storage.getOverridePassword())
-        binding.editOverridePassword.doAfterTextChanged { text ->
-            storage.setOverridePassword(text?.toString() ?: "")
-        }
+    private fun updateAuthFieldVisibility(config: AuthSectionConfig, mode: Int) {
+        config.setPasswordVisibility(if (mode == config.passwordMode) View.VISIBLE else View.GONE)
+        config.setCodeLengthVisibility(if (mode == config.randomMode) View.VISIBLE else View.GONE)
     }
 
-    private fun setupSettingsAuthDropdown() {
-        val options = listOf(
-            getString(R.string.override_auth_mode_none),
-            getString(R.string.override_auth_mode_password),
-            getString(R.string.override_auth_mode_random_32),
-            getString(R.string.override_auth_mode_random_64),
-            getString(R.string.override_auth_mode_random_128)
+    private fun authSectionConfigs(): List<AuthSectionConfig> {
+        return listOf(
+            AuthSectionConfig(
+                dropdown = binding.dropdownOverrideAuth,
+                passwordField = binding.editOverridePassword,
+                codeLengthField = binding.editOverrideCodeLength,
+                options = listOf(
+                    AuthOption(getString(R.string.override_auth_mode_none), Storage.OVERRIDE_AUTH_NONE),
+                    AuthOption(getString(R.string.override_auth_mode_password), Storage.OVERRIDE_AUTH_PASSWORD),
+                    AuthOption(getString(R.string.override_auth_mode_random), Storage.OVERRIDE_AUTH_RANDOM)
+                ),
+                getCurrentMode = { storage.getOverrideAuthMode() },
+                setMode = { storage.setOverrideAuthMode(it) },
+                passwordMode = Storage.OVERRIDE_AUTH_PASSWORD,
+                randomMode = Storage.OVERRIDE_AUTH_RANDOM,
+                setPasswordVisibility = { binding.layoutOverridePassword.visibility = it },
+                setCodeLengthVisibility = { binding.layoutOverrideCodeLength.visibility = it },
+                getPassword = { storage.getOverridePassword() },
+                setPassword = { storage.setOverridePassword(it) },
+                getCodeLength = { storage.getOverrideRandomCodeLength() },
+                setCodeLength = { storage.setOverrideRandomCodeLength(it) }
+            ),
+            AuthSectionConfig(
+                dropdown = binding.dropdownLockdownAuth,
+                passwordField = binding.editLockdownPassword,
+                codeLengthField = binding.editLockdownCodeLength,
+                options = listOf(
+                    AuthOption(getString(R.string.lockdown_cancel_disabled), Storage.LOCKDOWN_CANCEL_DISABLED),
+                    AuthOption(getString(R.string.lockdown_cancel_password), Storage.LOCKDOWN_CANCEL_PASSWORD),
+                    AuthOption(getString(R.string.lockdown_cancel_random), Storage.LOCKDOWN_CANCEL_RANDOM)
+                ),
+                getCurrentMode = { storage.getLockdownCancelAuthMode() },
+                setMode = { storage.setLockdownCancelAuthMode(it) },
+                passwordMode = Storage.LOCKDOWN_CANCEL_PASSWORD,
+                randomMode = Storage.LOCKDOWN_CANCEL_RANDOM,
+                setPasswordVisibility = { binding.layoutLockdownPassword.visibility = it },
+                setCodeLengthVisibility = { binding.layoutLockdownCodeLength.visibility = it },
+                getPassword = { storage.getLockdownPassword() },
+                setPassword = { storage.setLockdownPassword(it) },
+                getCodeLength = { storage.getLockdownRandomCodeLength() },
+                setCodeLength = { storage.setLockdownRandomCodeLength(it) }
+            ),
+            AuthSectionConfig(
+                dropdown = binding.dropdownSettingsAuth,
+                passwordField = binding.editSettingsPassword,
+                codeLengthField = binding.editSettingsCodeLength,
+                options = listOf(
+                    AuthOption(getString(R.string.settings_auth_mode_none), Storage.OVERRIDE_AUTH_NONE),
+                    AuthOption(getString(R.string.settings_auth_mode_password), Storage.OVERRIDE_AUTH_PASSWORD),
+                    AuthOption(getString(R.string.settings_auth_mode_random), Storage.OVERRIDE_AUTH_RANDOM)
+                ),
+                getCurrentMode = { storage.getSettingsAuthMode() },
+                setMode = { storage.setSettingsAuthMode(it) },
+                passwordMode = Storage.OVERRIDE_AUTH_PASSWORD,
+                randomMode = Storage.OVERRIDE_AUTH_RANDOM,
+                setPasswordVisibility = { binding.layoutSettingsPassword.visibility = it },
+                setCodeLengthVisibility = { binding.layoutSettingsCodeLength.visibility = it },
+                getPassword = { storage.getSettingsPassword() },
+                setPassword = { storage.setSettingsPassword(it) },
+                getCodeLength = { storage.getSettingsRandomCodeLength() },
+                setCodeLength = { storage.setSettingsRandomCodeLength(it) }
+            )
         )
-        val adapter = ArrayAdapter(this, R.layout.dropdown_item_two_line, options)
-        adapter.setDropDownViewResource(R.layout.dropdown_item_two_line)
-        binding.dropdownSettingsAuth.setAdapter(adapter)
-
-        val currentMode = storage.getSettingsAuthMode()
-        val initialIndex = when (currentMode) {
-            Storage.OVERRIDE_AUTH_PASSWORD -> 1
-            Storage.OVERRIDE_AUTH_RANDOM_32 -> 2
-            Storage.OVERRIDE_AUTH_RANDOM_64 -> 3
-            Storage.OVERRIDE_AUTH_RANDOM_128 -> 4
-            else -> 0
-        }
-        binding.dropdownSettingsAuth.setText(options[initialIndex], false)
-
-        binding.dropdownSettingsAuth.setOnClickListener {
-            binding.dropdownSettingsAuth.showDropDown()
-        }
-        binding.dropdownSettingsAuth.setOnFocusChangeListener { _, hasFocus ->
-            if (hasFocus) {
-                binding.dropdownSettingsAuth.showDropDown()
-            }
-        }
-
-        binding.dropdownSettingsAuth.setOnItemClickListener { _, _, position, _ ->
-            val mode = when (position) {
-                1 -> Storage.OVERRIDE_AUTH_PASSWORD
-                2 -> Storage.OVERRIDE_AUTH_RANDOM_32
-                3 -> Storage.OVERRIDE_AUTH_RANDOM_64
-                4 -> Storage.OVERRIDE_AUTH_RANDOM_128
-                else -> Storage.OVERRIDE_AUTH_NONE
-            }
-            storage.setSettingsAuthMode(mode)
-        }
-    }
-
-    private fun setupLockdownAuthDropdown() {
-        val options = listOf(
-            getString(R.string.lockdown_cancel_disabled),
-            getString(R.string.lockdown_cancel_password),
-            getString(R.string.lockdown_cancel_random_32),
-            getString(R.string.lockdown_cancel_random_64),
-            getString(R.string.lockdown_cancel_random_128)
-        )
-        val adapter = ArrayAdapter(this, R.layout.dropdown_item_two_line, options)
-        adapter.setDropDownViewResource(R.layout.dropdown_item_two_line)
-        binding.dropdownLockdownAuth.setAdapter(adapter)
-
-        val currentMode = storage.getLockdownCancelAuthMode()
-        val initialIndex = when (currentMode) {
-            Storage.LOCKDOWN_CANCEL_PASSWORD -> 1
-            Storage.LOCKDOWN_CANCEL_RANDOM_32 -> 2
-            Storage.LOCKDOWN_CANCEL_RANDOM_64 -> 3
-            Storage.LOCKDOWN_CANCEL_RANDOM_128 -> 4
-            else -> 0
-        }
-        binding.dropdownLockdownAuth.setText(options[initialIndex], false)
-
-        binding.dropdownLockdownAuth.setOnClickListener {
-            binding.dropdownLockdownAuth.showDropDown()
-        }
-        binding.dropdownLockdownAuth.setOnFocusChangeListener { _, hasFocus ->
-            if (hasFocus) {
-                binding.dropdownLockdownAuth.showDropDown()
-            }
-        }
-
-        binding.dropdownLockdownAuth.setOnItemClickListener { _, _, position, _ ->
-            val mode = when (position) {
-                1 -> Storage.LOCKDOWN_CANCEL_PASSWORD
-                2 -> Storage.LOCKDOWN_CANCEL_RANDOM_32
-                3 -> Storage.LOCKDOWN_CANCEL_RANDOM_64
-                4 -> Storage.LOCKDOWN_CANCEL_RANDOM_128
-                else -> Storage.LOCKDOWN_CANCEL_DISABLED
-            }
-            storage.setLockdownCancelAuthMode(mode)
-        }
-    }
-
-    private fun setupLockdownPasswordField() {
-        binding.editLockdownPassword.setText(storage.getLockdownPassword())
-        binding.editLockdownPassword.doAfterTextChanged { text ->
-            storage.setLockdownPassword(text?.toString() ?: "")
-        }
-    }
-
-    private fun setupSettingsPasswordField() {
-        binding.editSettingsPassword.setText(storage.getSettingsPassword())
-        binding.editSettingsPassword.doAfterTextChanged { text ->
-            storage.setSettingsPassword(text?.toString() ?: "")
-        }
     }
 
     private fun showSettingsAccessDialog(authMode: Int) {
-        val (message, expectedPassword, displayPassword) = if (authMode == Storage.OVERRIDE_AUTH_PASSWORD) {
-            Triple(
-                getString(R.string.enter_password_to_continue),
-                storage.getSettingsPassword(),
-                false
-            )
-        } else {
-            val randomPassword = generateRandomPassword(authMode)
-            Triple(
-                getString(R.string.settings_random_password_message),
-                randomPassword,
-                true
-            )
+        val prompt = AuthFlow.promptForPasswordOrRandomCode(
+            mode = authMode,
+            passwordMode = Storage.OVERRIDE_AUTH_PASSWORD,
+            randomMode = Storage.OVERRIDE_AUTH_RANDOM,
+            password = storage.getSettingsPassword(),
+            randomCodeLength = storage.getSettingsRandomCodeLength(),
+            passwordMessage = getString(R.string.enter_password_to_continue),
+            randomCodeMessage = getString(R.string.settings_random_password_message)
+        ) ?: run {
+            finish()
+            return
         }
         showPasswordDialog(
             headerResId = R.string.settings_access_title,
-            message = message,
-            expectedPassword = expectedPassword,
-            displayPassword = displayPassword,
+            message = prompt.message,
+            expectedPassword = prompt.expectedPassword,
+            displayPassword = prompt.displayPassword,
             incorrectToastResId = R.string.settings_password_incorrect,
             positiveButtonResId = R.string.continue_label,
             inputType = InputType.TYPE_CLASS_TEXT,
             onAuthorized = {
                 unlocked = true
-                setupOverrideAuthDropdown()
-                setupPasswordField()
-                setupLockdownAuthDropdown()
-                setupLockdownPasswordField()
-                setupSettingsAuthDropdown()
-                setupSettingsPasswordField()
+                setupAllAuthSections()
             },
             onCancelled = { finish() }
         )
-    }
-
-    private fun generateRandomPassword(mode: Int): String {
-        val length = when {
-            mode == Storage.OVERRIDE_AUTH_RANDOM_64 || mode == Storage.LOCKDOWN_CANCEL_RANDOM_64 -> 64
-            mode == Storage.OVERRIDE_AUTH_RANDOM_128 || mode == Storage.LOCKDOWN_CANCEL_RANDOM_128 -> 128
-            else -> 32
-        }
-        val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-        val chars = CharArray(length)
-        for (i in 0 until length) {
-            chars[i] = alphabet[secureRandom.nextInt(alphabet.length)]
-        }
-        return String(chars)
     }
 }

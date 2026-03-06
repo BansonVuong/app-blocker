@@ -8,6 +8,8 @@ local.properties
 # Build outputs
 build/
 app/build/
+/bin/
+/app/bin/
 
 # Logs
 *.log
@@ -31,3 +33,4 @@ captures/
 
 .claude/
 tmpclaude-*
+/docs

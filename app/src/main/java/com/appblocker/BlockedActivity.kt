@@ -9,7 +9,6 @@ import android.view.View
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import com.appblocker.databinding.ActivityBlockedBinding
-import java.security.SecureRandom
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -19,10 +18,10 @@ class BlockedActivity : AppCompatActivity() {
     private lateinit var binding: ActivityBlockedBinding
     private lateinit var storage: Storage
     private val handler = Handler(Looper.getMainLooper())
-    private val secureRandom = SecureRandom()
     private var blockSetId: String? = null
     private var mode: Int = MODE_QUOTA
     private var interventionMode: Int = BlockSet.INTERVENTION_NONE
+    private var interventionCodeLength: Int = 32
     private var interventionDialogShown = false
     private val updateRunnable = object : Runnable {
         override fun run() {
@@ -37,6 +36,7 @@ class BlockedActivity : AppCompatActivity() {
         const val EXTRA_RETURN_PACKAGE = "return_package"
         const val EXTRA_MODE = "mode"
         const val EXTRA_INTERVENTION_MODE = "intervention_mode"
+        const val EXTRA_INTERVENTION_CODE_LENGTH = "intervention_code_length"
         const val MODE_QUOTA = 0
         const val MODE_INTERVENTION = 1
         private const val UPDATE_INTERVAL_MS = 30_000L
@@ -68,6 +68,11 @@ class BlockedActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        val newMode = intent.getIntExtra(EXTRA_MODE, MODE_QUOTA)
+        // If we're already showing an intervention dialog, ignore duplicate intervention intents
+        if (newMode == MODE_INTERVENTION && mode == MODE_INTERVENTION && interventionDialogShown) {
+            return
+        }
         applyIntentState(intent)
         handler.removeCallbacks(updateRunnable)
         if (mode == MODE_INTERVENTION) {
@@ -96,6 +101,7 @@ class BlockedActivity : AppCompatActivity() {
         blockSetId = intent.getStringExtra(EXTRA_BLOCK_SET_ID)
         mode = intent.getIntExtra(EXTRA_MODE, MODE_QUOTA)
         interventionMode = intent.getIntExtra(EXTRA_INTERVENTION_MODE, BlockSet.INTERVENTION_NONE)
+        interventionCodeLength = intent.getIntExtra(EXTRA_INTERVENTION_CODE_LENGTH, 32)
         interventionDialogShown = false
 
         binding.textTitle.text = if (mode == MODE_INTERVENTION) {
@@ -140,16 +146,21 @@ class BlockedActivity : AppCompatActivity() {
     private fun showInterventionDialogIfNeeded() {
         if (interventionDialogShown) return
         interventionDialogShown = true
-        val randomPassword = generateRandomPassword(interventionMode)
-        if (randomPassword.isEmpty()) {
+        val prompt = AuthFlow.promptForRandomCode(
+            mode = interventionMode,
+            randomMode = BlockSet.INTERVENTION_RANDOM,
+            randomCodeLength = interventionCodeLength,
+            randomCodeMessage = getString(R.string.enter_random_password_to_continue)
+        )
+        if (prompt == null) {
             goHome()
             return
         }
         showPasswordDialog(
             headerResId = R.string.intervention_required_title,
-            message = getString(R.string.enter_random_password_to_continue),
-            expectedPassword = randomPassword,
-            displayPassword = true,
+            message = prompt.message,
+            expectedPassword = prompt.expectedPassword,
+            displayPassword = prompt.displayPassword,
             incorrectToastResId = R.string.intervention_password_incorrect,
             positiveButtonResId = R.string.continue_label,
             inputType = InputType.TYPE_CLASS_TEXT,
@@ -179,21 +190,6 @@ class BlockedActivity : AppCompatActivity() {
         launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         startActivity(launchIntent)
         return true
-    }
-
-    private fun generateRandomPassword(mode: Int): String {
-        val length = when (mode) {
-            BlockSet.INTERVENTION_RANDOM_32 -> 32
-            BlockSet.INTERVENTION_RANDOM_64 -> 64
-            BlockSet.INTERVENTION_RANDOM_128 -> 128
-            else -> return ""
-        }
-        val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-        val chars = CharArray(length)
-        for (i in 0 until length) {
-            chars[i] = alphabet[secureRandom.nextInt(alphabet.length)]
-        }
-        return String(chars)
     }
 
     private fun updateUnblockTime(blockSetId: String?) {
