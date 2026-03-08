@@ -19,7 +19,17 @@ data class TimePeriod(
         val startMinutes = startHour * 60 + startMinute
         val endMinutes = endHour * 60 + endMinute
 
-        return nowMinutes in startMinutes..endMinutes
+        // Same day window
+        if(startMinutes <= endMinutes) {
+            return days.contains(dayOfWeek) && nowMinutes in startMinutes..endMinutes
+        }
+        // Overnight window (e.g., 11 PM to 6 AM)
+        if(days.contains(dayOfWeek) && nowMinutes >= startMinutes) {
+            return true
+        }
+        
+        val previousDay = if (dayOfWeek == Calendar.SUNDAY) Calendar.SATURDAY else dayOfWeek - 1
+        return days.contains(previousDay) && nowMinutes <= endMinutes
     }
 
     fun formatDays(): String {
