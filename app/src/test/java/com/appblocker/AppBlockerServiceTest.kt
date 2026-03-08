@@ -5,7 +5,11 @@ import android.content.Intent
 import android.graphics.Rect
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import androidx.test.core.app.ApplicationProvider
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -16,7 +20,6 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows
 import org.robolectric.annotation.Config
-import androidx.test.core.app.ApplicationProvider
 
 @Suppress("DEPRECATION")
 @RunWith(RobolectricTestRunner::class)
@@ -278,6 +281,107 @@ class AppBlockerServiceTest {
         service.onAccessibilityEvent(createWindowContentChangedEvent("org.mozilla.fenix"))
 
         assertEquals(1, drainStartedActivitiesCount())
+    }
+
+    @Test
+    fun overlappingBlockSetsTrackStrictestQuotaSet() {
+        val strict = BlockSet(
+            name = "Strict",
+            apps = mutableListOf("com.example.blocked"),
+            quotaMinutes = 1.0,
+            windowMinutes = 5
+        )
+        val lenient = BlockSet(
+            name = "Lenient",
+            apps = mutableListOf("com.example.blocked"),
+            quotaMinutes = 3.0,
+            windowMinutes = 5
+        )
+        storage.saveBlockSets(listOf(lenient, strict))
+
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        service.onAccessibilityEvent(createWindowStateChangedEvent("com.example.blocked"))
+
+        val trackedBlockSet = getPrivateField(service, "currentBlockSet") as BlockSet?
+        assertEquals("Strict", trackedBlockSet?.name)
+    }
+
+    @Test
+    fun overlappingRandomInterventionsUseStrictestCodeLength() {
+        val first = BlockSet(
+            name = "Set A",
+            apps = mutableListOf("com.example.blocked"),
+            quotaMinutes = 30.0,
+            windowMinutes = 5,
+            intervention = BlockSet.INTERVENTION_RANDOM,
+            interventionCodeLength = 30
+        )
+        val second = BlockSet(
+            name = "Set B",
+            apps = mutableListOf("com.example.blocked"),
+            quotaMinutes = 30.0,
+            windowMinutes = 5,
+            intervention = BlockSet.INTERVENTION_RANDOM,
+            interventionCodeLength = 10
+        )
+        storage.saveBlockSets(listOf(first, second))
+
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        service.onAccessibilityEvent(createWindowStateChangedEvent("com.example.blocked"))
+
+        val intent = Shadows.shadowOf(app).nextStartedActivity
+        assertEquals(BlockedActivity.MODE_INTERVENTION, intent.getIntExtra(BlockedActivity.EXTRA_MODE, -1))
+
+        val json = intent.getStringExtra(BlockedActivity.EXTRA_INTERVENTION_STEPS_JSON)
+        val type = object : TypeToken<List<InterventionChallenge>>() {}.type
+        val steps = Gson().fromJson<List<InterventionChallenge>>(json, type).orEmpty()
+        assertEquals(1, steps.size)
+        assertEquals(BlockSet.INTERVENTION_RANDOM, steps.first().mode)
+        assertEquals(30, steps.first().randomCodeLength)
+    }
+
+    @Test
+    fun passwordInterventionsOverrideRandomAndRemainSequential() {
+        val randomSet = BlockSet(
+            name = "Random",
+            apps = mutableListOf("com.example.blocked"),
+            quotaMinutes = 30.0,
+            windowMinutes = 5,
+            intervention = BlockSet.INTERVENTION_RANDOM,
+            interventionCodeLength = 12
+        )
+        val passwordA = BlockSet(
+            name = "Alpha",
+            apps = mutableListOf("com.example.blocked"),
+            quotaMinutes = 30.0,
+            windowMinutes = 5,
+            intervention = BlockSet.INTERVENTION_PASSWORD,
+            interventionPassword = "first-pass"
+        )
+        val passwordB = BlockSet(
+            name = "Beta",
+            apps = mutableListOf("com.example.blocked"),
+            quotaMinutes = 30.0,
+            windowMinutes = 5,
+            intervention = BlockSet.INTERVENTION_PASSWORD,
+            interventionPassword = "second-pass"
+        )
+        storage.saveBlockSets(listOf(randomSet, passwordB, passwordA))
+
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        service.onAccessibilityEvent(createWindowStateChangedEvent("com.example.blocked"))
+
+        val intent = Shadows.shadowOf(app).nextStartedActivity
+        assertEquals(BlockedActivity.MODE_INTERVENTION, intent.getIntExtra(BlockedActivity.EXTRA_MODE, -1))
+
+        val json = intent.getStringExtra(BlockedActivity.EXTRA_INTERVENTION_STEPS_JSON)
+        val type = object : TypeToken<List<InterventionChallenge>>() {}.type
+        val steps = Gson().fromJson<List<InterventionChallenge>>(json, type).orEmpty()
+
+        assertEquals(2, steps.size)
+        assertTrue(steps.all { it.mode == BlockSet.INTERVENTION_PASSWORD })
+        assertEquals(listOf("Alpha", "Beta"), steps.map { it.blockSetName })
+        assertFalse(steps.any { it.mode == BlockSet.INTERVENTION_RANDOM })
     }
 
     @Test

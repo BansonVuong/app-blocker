@@ -35,7 +35,8 @@ class BlockSetActivity : AppCompatActivity() {
         val WINDOW_OPTIONS = listOf(5, 10, 15, 20, 30, 60)
         val INTERVENTION_OPTIONS = listOf(
             BlockSet.INTERVENTION_NONE,
-            BlockSet.INTERVENTION_RANDOM
+            BlockSet.INTERVENTION_RANDOM,
+            BlockSet.INTERVENTION_PASSWORD
         )
         private const val DEFAULT_QUOTA_MINUTES = 30.0
     }
@@ -76,6 +77,7 @@ class BlockSetActivity : AppCompatActivity() {
                 if (it.interventionCodeLength > 0) {
                     binding.editInterventionCodeLength.setText(it.interventionCodeLength.toString())
                 }
+                binding.editInterventionPassword.setText(it.interventionPassword)
                 binding.checkCombinedQuota.isChecked = it.combinedQuota
                 binding.checkAllowOverride.isChecked = it.allowOverride
                 selectedApps = it.apps.toMutableList()
@@ -118,6 +120,8 @@ class BlockSetActivity : AppCompatActivity() {
                 val mode = INTERVENTION_OPTIONS[position]
                 binding.layoutInterventionCodeLength.visibility =
                     if (mode == BlockSet.INTERVENTION_RANDOM) View.VISIBLE else View.GONE
+                binding.layoutInterventionPassword.visibility =
+                    if (mode == BlockSet.INTERVENTION_PASSWORD) View.VISIBLE else View.GONE
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
@@ -327,6 +331,11 @@ class BlockSetActivity : AppCompatActivity() {
         val interventionIndex = binding.spinnerIntervention.selectedItemPosition
         val intervention = INTERVENTION_OPTIONS[interventionIndex]
         val interventionCodeLength = binding.editInterventionCodeLength.text?.toString()?.toIntOrNull()?.coerceAtLeast(1) ?: 32
+        val interventionPassword = binding.editInterventionPassword.text?.toString()?.trim().orEmpty()
+        if (intervention == BlockSet.INTERVENTION_PASSWORD && interventionPassword.isEmpty()) {
+            Toast.makeText(this, getString(R.string.enter_intervention_password), Toast.LENGTH_SHORT).show()
+            return
+        }
         val combinedQuota = binding.checkCombinedQuota.isChecked
         val allowOverride = binding.checkAllowOverride.isChecked
         val scheduleEnabled = binding.switchSchedule.isChecked
@@ -345,6 +354,7 @@ class BlockSetActivity : AppCompatActivity() {
                     allowOverride = allowOverride,
                     intervention = intervention,
                     interventionCodeLength = interventionCodeLength,
+                    interventionPassword = interventionPassword,
                     apps = selectedApps,
                     scheduleEnabled = scheduleEnabled,
                     timePeriods = timePeriods
@@ -360,6 +370,7 @@ class BlockSetActivity : AppCompatActivity() {
                 allowOverride = allowOverride,
                 intervention = intervention,
                 interventionCodeLength = interventionCodeLength,
+                interventionPassword = interventionPassword,
                 apps = selectedApps,
                 scheduleEnabled = scheduleEnabled,
                 timePeriods = timePeriods

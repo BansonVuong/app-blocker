@@ -9,6 +9,8 @@ import android.view.View
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import com.appblocker.databinding.ActivityBlockedBinding
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -22,6 +24,7 @@ class BlockedActivity : AppCompatActivity() {
     private var mode: Int = MODE_QUOTA
     private var interventionMode: Int = BlockSet.INTERVENTION_NONE
     private var interventionCodeLength: Int = 32
+    private var interventionChallenges: List<InterventionChallenge> = emptyList()
     private var interventionDialogShown = false
     private val updateRunnable = object : Runnable {
         override fun run() {
@@ -37,6 +40,7 @@ class BlockedActivity : AppCompatActivity() {
         const val EXTRA_MODE = "mode"
         const val EXTRA_INTERVENTION_MODE = "intervention_mode"
         const val EXTRA_INTERVENTION_CODE_LENGTH = "intervention_code_length"
+        const val EXTRA_INTERVENTION_STEPS_JSON = "intervention_steps_json"
         const val MODE_QUOTA = 0
         const val MODE_INTERVENTION = 1
         private const val UPDATE_INTERVAL_MS = 30_000L
@@ -102,6 +106,7 @@ class BlockedActivity : AppCompatActivity() {
         mode = intent.getIntExtra(EXTRA_MODE, MODE_QUOTA)
         interventionMode = intent.getIntExtra(EXTRA_INTERVENTION_MODE, BlockSet.INTERVENTION_NONE)
         interventionCodeLength = intent.getIntExtra(EXTRA_INTERVENTION_CODE_LENGTH, 32)
+        interventionChallenges = parseInterventionChallenges(intent)
         interventionDialogShown = false
 
         binding.textTitle.text = if (mode == MODE_INTERVENTION) {
@@ -146,37 +151,105 @@ class BlockedActivity : AppCompatActivity() {
     private fun showInterventionDialogIfNeeded() {
         if (interventionDialogShown) return
         interventionDialogShown = true
-        val prompt = AuthFlow.promptForRandomCode(
-            mode = interventionMode,
-            randomMode = BlockSet.INTERVENTION_RANDOM,
-            randomCodeLength = interventionCodeLength,
-            randomCodeMessage = getString(R.string.enter_random_password_to_continue)
-        )
-        if (prompt == null) {
-            goHome()
+        showInterventionDialogAt(0)
+    }
+
+    private fun showInterventionDialogAt(index: Int) {
+        if (index >= interventionChallenges.size) {
+            onInterventionAuthorized()
             return
         }
-        showPasswordDialog(
-            headerResId = R.string.intervention_required_title,
-            message = prompt.message,
-            expectedPassword = prompt.expectedPassword,
-            displayPassword = prompt.displayPassword,
-            incorrectToastResId = R.string.intervention_password_incorrect,
-            positiveButtonResId = R.string.continue_label,
-            inputType = InputType.TYPE_CLASS_TEXT,
-            onAuthorized = {
-                val returnPackage = intent.getStringExtra(EXTRA_RETURN_PACKAGE)
-                if (!returnPackage.isNullOrBlank()) {
-                    storage.grantInterventionBypass(returnPackage)
-                }
-                if (launchReturnApp()) {
-                    finish()
-                } else {
+
+        val challenge = interventionChallenges[index]
+        when (challenge.mode) {
+            BlockSet.INTERVENTION_PASSWORD -> {
+                showPasswordDialog(
+                    headerResId = R.string.intervention_required_title,
+                    message = getString(
+                        R.string.enter_intervention_password_for_block_set,
+                        challenge.blockSetName
+                    ),
+                    expectedPassword = challenge.expectedPassword,
+                    displayPassword = false,
+                    incorrectToastResId = R.string.intervention_password_incorrect,
+                    positiveButtonResId = R.string.continue_label,
+                    inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD,
+                    onAuthorized = { showInterventionDialogAt(index + 1) },
+                    onCancelled = { goHome() }
+                )
+            }
+            BlockSet.INTERVENTION_RANDOM -> {
+                val prompt = AuthFlow.promptForRandomCode(
+                    mode = challenge.mode,
+                    randomMode = BlockSet.INTERVENTION_RANDOM,
+                    randomCodeLength = challenge.randomCodeLength,
+                    randomCodeMessage = getString(R.string.enter_random_password_to_continue)
+                )
+                if (prompt == null) {
                     goHome()
+                    return
                 }
-            },
-            onCancelled = { goHome() }
-        )
+                showPasswordDialog(
+                    headerResId = R.string.intervention_required_title,
+                    message = prompt.message,
+                    expectedPassword = prompt.expectedPassword,
+                    displayPassword = prompt.displayPassword,
+                    incorrectToastResId = R.string.intervention_password_incorrect,
+                    positiveButtonResId = R.string.continue_label,
+                    inputType = InputType.TYPE_CLASS_TEXT,
+                    onAuthorized = { showInterventionDialogAt(index + 1) },
+                    onCancelled = { goHome() }
+                )
+            }
+            else -> goHome()
+        }
+    }
+
+    private fun onInterventionAuthorized() {
+        val returnPackage = intent.getStringExtra(EXTRA_RETURN_PACKAGE)
+        if (!returnPackage.isNullOrBlank()) {
+            storage.grantInterventionBypass(returnPackage)
+        }
+        if (launchReturnApp()) {
+            finish()
+        } else {
+            goHome()
+        }
+    }
+
+    private fun parseInterventionChallenges(intent: Intent): List<InterventionChallenge> {
+        val json = intent.getStringExtra(EXTRA_INTERVENTION_STEPS_JSON)
+        if (!json.isNullOrBlank()) {
+            val type = object : TypeToken<List<InterventionChallenge>>() {}.type
+            val parsed = Gson().fromJson<List<InterventionChallenge>>(json, type).orEmpty()
+            if (parsed.isNotEmpty()) {
+                return parsed
+            }
+        }
+
+        return when (interventionMode) {
+            BlockSet.INTERVENTION_PASSWORD -> {
+                listOf(
+                    InterventionChallenge(
+                        mode = BlockSet.INTERVENTION_PASSWORD,
+                        blockSetId = blockSetId ?: "",
+                        blockSetName = intent.getStringExtra(EXTRA_BLOCK_SET_NAME) ?: "Unknown",
+                        expectedPassword = ""
+                    )
+                )
+            }
+            BlockSet.INTERVENTION_RANDOM -> {
+                listOf(
+                    InterventionChallenge(
+                        mode = BlockSet.INTERVENTION_RANDOM,
+                        blockSetId = blockSetId ?: "",
+                        blockSetName = intent.getStringExtra(EXTRA_BLOCK_SET_NAME) ?: "Unknown",
+                        randomCodeLength = interventionCodeLength
+                    )
+                )
+            }
+            else -> emptyList()
+        }
     }
 
     private fun launchReturnApp(): Boolean {

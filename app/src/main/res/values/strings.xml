@@ -36,9 +36,12 @@
     <string name="intervention_label">Intervention:</string>
     <string name="intervention_none">No intervention</string>
     <string name="intervention_random">Random code required for intervention</string>
+    <string name="intervention_password">Password required for intervention</string>
+    <string name="intervention_password_label">Intervention password</string>
     <string name="intervention_required_title">Intervention Required</string>
     <string name="intervention_required_message">Complete the intervention to open this app.</string>
     <string name="intervention_password_incorrect">Incorrect intervention password</string>
+    <string name="enter_intervention_password_for_block_set">Enter intervention password for "%1$s":</string>
     <string name="override">Override</string>
     <string name="cancel_override">Cancel override</string>
     <string name="lockdown">Lockdown</string>
@@ -80,6 +83,7 @@
     <string name="schedule_inactive">Inactive (outside schedule)</string>
     <string name="enter_block_set_name">Please enter a name</string>
     <string name="enter_quota_minutes">Please enter a valid quota in minutes</string>
+    <string name="enter_intervention_password">Please enter an intervention password</string>
     <string name="sort_by">Sort by</string>
     <string name="sort_time_spent">Time spent</string>
     <string name="sort_alphabetical">Alphabetical</string>
@@ -118,6 +122,7 @@
     <string-array name="intervention_options">
         <item>@string/intervention_none</item>
         <item>@string/intervention_random</item>
+        <item>@string/intervention_password</item>
     </string-array>
 
     <string-array name="app_sort_options">

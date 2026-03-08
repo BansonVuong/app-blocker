@@ -67,6 +67,7 @@ data class BlockSet(
     var allowOverride: Boolean = false,
     var intervention: Int = INTERVENTION_NONE,
     var interventionCodeLength: Int = 32,
+    var interventionPassword: String = "",
     var scheduleEnabled: Boolean = false,
     var timePeriods: MutableList<TimePeriod> = mutableListOf()
 ) {
@@ -79,5 +80,6 @@ data class BlockSet(
     companion object {
         const val INTERVENTION_NONE = 0
         const val INTERVENTION_RANDOM = 1
+        const val INTERVENTION_PASSWORD = 4
     }
 }

@@ -1,5 +1,15 @@
-  {
-    "java.import.gradle.enabled": true,
-    "java.configuration.updateBuildConfiguration": "automatic",
-    "kotlin.languageServer.enabled": true
+{
+  "java.import.gradle.enabled": false,
+  "java.configuration.updateBuildConfiguration": "disabled",
+  "kotlin.languageServer.enabled": true,
+  "files.watcherExclude": {
+    "**/build/**": true,
+    "**/.gradle/**": true
+  },
+  "search.exclude": {
+    "**/build/**": true
+  },
+  "files.exclude": {
+    "**/build/**": true
   }
+}

@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import java.util.Calendar
 import kotlin.math.roundToInt
 
 internal data class SimpleUsageEvent(
@@ -62,6 +63,23 @@ internal fun computeRemainingSeconds(quotaMinutes: Double, usedSeconds: Int): In
     val quotaSeconds = (quotaMinutes * 60).roundToInt()
     return maxOf(0, quotaSeconds - usedSeconds)
 }
+
+data class InterventionChallenge(
+    val mode: Int,
+    val blockSetId: String,
+    val blockSetName: String,
+    val randomCodeLength: Int = 32,
+    val expectedPassword: String = ""
+)
+
+data class EffectiveAppPolicy(
+    val packageName: String,
+    val activeBlockSets: List<BlockSet>,
+    val primaryBlockSet: BlockSet,
+    val quotaBlocked: Boolean,
+    val interventionChallenges: List<InterventionChallenge>,
+    val interventionSignature: String
+)
 
 class Storage(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("app_blocker", Context.MODE_PRIVATE)
@@ -190,6 +208,83 @@ class Storage(context: Context) {
 
     fun getBlockSetForApp(packageName: String): BlockSet? {
         return getBlockSets().find { it.apps.contains(packageName) }
+    }
+
+    fun resolveEffectiveAppPolicy(
+        packageName: String,
+        nowMs: Long = System.currentTimeMillis(),
+        calendar: Calendar = Calendar.getInstance()
+    ): EffectiveAppPolicy? {
+        val activeBlockSets = getBlockSets()
+            .filter { it.apps.contains(packageName) && it.isScheduleActive(calendar) }
+        if (activeBlockSets.isEmpty()) return null
+
+        val remainingByBlockSetId = activeBlockSets.associate { it.id to getRemainingSeconds(it) }
+        val primaryBlockSet = activeBlockSets.minWithOrNull(
+            compareBy<BlockSet>(
+                { remainingByBlockSetId[it.id] ?: Int.MAX_VALUE },
+                { it.quotaMinutes },
+                { it.windowMinutes },
+                { it.id }
+            )
+        ) ?: return null
+
+        val quotaBlocked = activeBlockSets.any { blockSet ->
+            val remaining = remainingByBlockSetId[blockSet.id] ?: Int.MAX_VALUE
+            remaining <= 0 && !isOverrideActive(blockSet, nowMs)
+        }
+
+        val interventionChallenges = buildInterventionChallenges(activeBlockSets)
+        val interventionSignature = interventionChallenges.joinToString("|") { challenge ->
+            listOf(
+                challenge.mode.toString(),
+                challenge.blockSetId,
+                challenge.randomCodeLength.toString(),
+                challenge.expectedPassword
+            ).joinToString(":")
+        }
+
+        return EffectiveAppPolicy(
+            packageName = packageName,
+            activeBlockSets = activeBlockSets,
+            primaryBlockSet = primaryBlockSet,
+            quotaBlocked = quotaBlocked,
+            interventionChallenges = interventionChallenges,
+            interventionSignature = interventionSignature
+        )
+    }
+
+    private fun buildInterventionChallenges(activeBlockSets: List<BlockSet>): List<InterventionChallenge> {
+        val passwordChallenges = activeBlockSets
+            .filter { it.intervention == BlockSet.INTERVENTION_PASSWORD }
+            .sortedWith(compareBy(BlockSet::name, BlockSet::id))
+            .map { blockSet ->
+                InterventionChallenge(
+                    mode = BlockSet.INTERVENTION_PASSWORD,
+                    blockSetId = blockSet.id,
+                    blockSetName = blockSet.name,
+                    expectedPassword = blockSet.interventionPassword
+                )
+            }
+        if (passwordChallenges.isNotEmpty()) {
+            return passwordChallenges
+        }
+
+        val randomInterventions = activeBlockSets.filter { it.intervention == BlockSet.INTERVENTION_RANDOM }
+        if (randomInterventions.isEmpty()) {
+            return emptyList()
+        }
+        val strictestCodeLength = randomInterventions.maxOf { it.interventionCodeLength.coerceAtLeast(1) }
+        val strictestBlockSet = randomInterventions.minWithOrNull(compareBy(BlockSet::quotaMinutes, BlockSet::id))
+            ?: randomInterventions.first()
+        return listOf(
+            InterventionChallenge(
+                mode = BlockSet.INTERVENTION_RANDOM,
+                blockSetId = strictestBlockSet.id,
+                blockSetName = strictestBlockSet.name,
+                randomCodeLength = strictestCodeLength
+            )
+        )
     }
 
     fun getOverlayPosition(packageName: String): Pair<Int, Int>? {

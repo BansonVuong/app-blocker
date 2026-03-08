@@ -8,6 +8,7 @@ import android.os.Looper
 import android.util.Log
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
+import com.google.gson.Gson
 
 /**
  * Accessibility service that monitors foreground app changes and enforces block sets.
@@ -22,6 +23,7 @@ class AppBlockerService : AccessibilityService() {
     private var overlayUpdateRunnable: Runnable? = null
     private var pendingStopRunnable: Runnable? = null
     private var interventionAuthorizedPackage: String? = null
+    private var interventionAuthorizedSignature: String? = null
     private lateinit var overlayController: AppBlockerOverlayController
     private lateinit var screenStateTracker: AppBlockerScreenStateTracker
     private lateinit var eventFilter: AppBlockerEventFilter
@@ -36,6 +38,7 @@ class AppBlockerService : AccessibilityService() {
     private lateinit var youtubeDetector: YouTubeDetector
     private lateinit var browserIncognitoDetector: BrowserIncognitoDetector
     private var lastForegroundPackage: String? = null
+    private val gson = Gson()
 
     // Local session tracking to enable immediate blocking when timer runs out.
     private var sessionStartTimeMs: Long = 0
@@ -107,8 +110,8 @@ class AppBlockerService : AccessibilityService() {
                 return@registerDebugOverlayEnabledListener
             }
             val trackedPackage = currentTrackedPackage ?: return@registerDebugOverlayEnabledListener
-            val blockSet = storage.getBlockSetForApp(trackedPackage)
-            overlayController.updateDebugOverlay(trackedPackage, blockSet != null, currentTrackedPackage)
+            val policy = storage.resolveEffectiveAppPolicy(trackedPackage)
+            overlayController.updateDebugOverlay(trackedPackage, policy != null, currentTrackedPackage)
             updateOverlay(currentBlockSet)
         }
     }
@@ -161,8 +164,8 @@ class AppBlockerService : AccessibilityService() {
 
         logDebug("event", buildEventLogMessage(packageName, className))
 
-        val blockSet = storage.getBlockSetForApp(effectivePackageName)
-        val isBlocked = blockSet != null
+        val policy = storage.resolveEffectiveAppPolicy(effectivePackageName, nowMs)
+        val isBlocked = policy != null
         logDebug("event", "isBlocked=$isBlocked debug=${storage.isDebugOverlayEnabled()}")
         handleDebugOverlay(effectivePackageName, isBlocked)
 
@@ -172,12 +175,13 @@ class AppBlockerService : AccessibilityService() {
 
         if (packageName == "com.android.launcher" || packageName.contains("launcher")) {
             interventionAuthorizedPackage = null
+            interventionAuthorizedSignature = null
             stopTracking()
             return
         }
 
-        if (blockSet != null && blockSet.isScheduleActive()) {
-            handleBlockedApp(effectivePackageName, blockSet, nowMs)
+        if (policy != null) {
+            handleBlockedApp(effectivePackageName, policy, nowMs)
             return
         }
 
@@ -189,7 +193,8 @@ class AppBlockerService : AccessibilityService() {
         handleUnblockedAppSwitch(effectivePackageName)
     }
 
-    private fun handleBlockedApp(packageName: String, blockSet: BlockSet, nowMs: Long) {
+    private fun handleBlockedApp(packageName: String, policy: EffectiveAppPolicy, nowMs: Long) {
+        val blockSet = policy.primaryBlockSet
         lastBlockedEventTimeMs = nowMs
         cancelPendingStop()
 
@@ -200,15 +205,14 @@ class AppBlockerService : AccessibilityService() {
             return
         }
 
-        val overrideActive = storage.isOverrideActive(blockSet, nowMs)
-        if (storage.isQuotaExceeded(blockSet) && !overrideActive) {
+        if (policy.quotaBlocked) {
             logDebug("blocked", "quota exceeded for ${blockSet.name}")
             launchBlockedScreen(blockSet.name, blockSet.id, packageName)
             stopTracking()
             return
         }
 
-        if (!isInterventionAuthorized(packageName, blockSet)) {
+        if (!isInterventionAuthorized(packageName, policy)) {
             logDebug("blocked", "intervention required for ${blockSet.name}")
             launchBlockedScreen(
                 blockSetName = blockSet.name,
@@ -216,7 +220,8 @@ class AppBlockerService : AccessibilityService() {
                 blockedPackageName = packageName,
                 mode = BlockedActivity.MODE_INTERVENTION,
                 interventionMode = blockSet.intervention,
-                interventionCodeLength = blockSet.interventionCodeLength
+                interventionCodeLength = blockSet.interventionCodeLength,
+                interventionStepsJson = gson.toJson(policy.interventionChallenges)
             )
             stopTracking()
             return
@@ -289,11 +294,12 @@ class AppBlockerService : AccessibilityService() {
 
         overlayUpdateRunnable = object : Runnable {
             override fun run() {
-                currentBlockSet?.let { bs ->
-                    val updatedBlockSet = storage.getBlockSets().find { it.id == bs.id }
-                    if (updatedBlockSet != null) {
-                        val nowMs = System.currentTimeMillis()
-                        val trackedPackage = currentTrackedPackage ?: return
+                currentBlockSet?.let {
+                    val nowMs = System.currentTimeMillis()
+                    val trackedPackage = currentTrackedPackage ?: return
+                    val policy = storage.resolveEffectiveAppPolicy(trackedPackage, nowMs)
+                    val updatedBlockSet = policy?.primaryBlockSet
+                    if (updatedBlockSet != null && policy != null) {
 
                         applySessionState(
                             sessionTracker.updateForWindowBoundary(
@@ -306,14 +312,28 @@ class AppBlockerService : AccessibilityService() {
 
                         val localRemainingSeconds =
                             sessionTracker.localRemainingSeconds(currentSessionState(), nowMs)
-                        val overrideActive = storage.isOverrideActive(updatedBlockSet, nowMs)
-
-                        if (!overrideActive && localRemainingSeconds <= 0) {
+                        if (policy.quotaBlocked || localRemainingSeconds <= 0) {
                             launchBlockedScreen(updatedBlockSet.name, updatedBlockSet.id, trackedPackage)
                             stopTracking()
                             return
                         }
+                        if (!isInterventionAuthorized(trackedPackage, policy)) {
+                            launchBlockedScreen(
+                                blockSetName = updatedBlockSet.name,
+                                blockSetId = updatedBlockSet.id,
+                                blockedPackageName = trackedPackage,
+                                mode = BlockedActivity.MODE_INTERVENTION,
+                                interventionMode = updatedBlockSet.intervention,
+                                interventionCodeLength = updatedBlockSet.interventionCodeLength,
+                                interventionStepsJson = gson.toJson(policy.interventionChallenges)
+                            )
+                            stopTracking()
+                            return
+                        }
                         updateOverlayWithLocalTracking(updatedBlockSet)
+                    } else {
+                        stopTracking()
+                        return
                     }
                 }
                 handler.postDelayed(this, OVERLAY_UPDATE_INTERVAL_MS)
@@ -372,13 +392,15 @@ class AppBlockerService : AccessibilityService() {
         blockedPackageName: String? = null,
         mode: Int = BlockedActivity.MODE_QUOTA,
         interventionMode: Int = BlockSet.INTERVENTION_NONE,
-        interventionCodeLength: Int = 32
+        interventionCodeLength: Int = 32,
+        interventionStepsJson: String? = null
     ) {
         val launchKey = listOf(
             blockSetId ?: "",
             blockedPackageName ?: "",
             mode.toString(),
-            interventionMode.toString()
+            interventionMode.toString(),
+            interventionStepsJson ?: ""
         ).joinToString("|")
 
         val nowMs = System.currentTimeMillis()
@@ -400,19 +422,23 @@ class AppBlockerService : AccessibilityService() {
             putExtra(BlockedActivity.EXTRA_MODE, mode)
             putExtra(BlockedActivity.EXTRA_INTERVENTION_MODE, interventionMode)
             putExtra(BlockedActivity.EXTRA_INTERVENTION_CODE_LENGTH, interventionCodeLength)
+            interventionStepsJson?.let { putExtra(BlockedActivity.EXTRA_INTERVENTION_STEPS_JSON, it) }
         }
         startActivity(intent)
     }
 
-    private fun isInterventionAuthorized(packageName: String, blockSet: BlockSet): Boolean {
-        if (blockSet.intervention == BlockSet.INTERVENTION_NONE) {
+    private fun isInterventionAuthorized(packageName: String, policy: EffectiveAppPolicy): Boolean {
+        if (policy.interventionChallenges.isEmpty()) {
             return true
         }
-        if (interventionAuthorizedPackage == packageName) {
+        if (interventionAuthorizedPackage == packageName &&
+            interventionAuthorizedSignature == policy.interventionSignature
+        ) {
             return true
         }
         if (storage.consumeInterventionBypass(packageName)) {
             interventionAuthorizedPackage = packageName
+            interventionAuthorizedSignature = policy.interventionSignature
             return true
         }
         return false
