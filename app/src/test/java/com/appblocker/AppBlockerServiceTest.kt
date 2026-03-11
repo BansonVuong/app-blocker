@@ -385,6 +385,49 @@ class AppBlockerServiceTest {
     }
 
     @Test
+    fun overlappingExpiredQuotaLaunchesBlockedScreenForBlockingBlockSet() {
+        val alwaysOn = BlockSet(
+            name = "Always On",
+            apps = mutableListOf("com.example.blocked"),
+            quotaMinutes = 0.0,
+            windowMinutes = 60
+        )
+        val scheduled = BlockSet(
+            name = "Scheduled",
+            apps = mutableListOf("com.example.blocked"),
+            quotaMinutes = 10.0,
+            windowMinutes = 60,
+            scheduleEnabled = true,
+            timePeriods = mutableListOf(
+                TimePeriod(
+                    days = mutableListOf(
+                        Calendar.SUNDAY,
+                        Calendar.MONDAY,
+                        Calendar.TUESDAY,
+                        Calendar.WEDNESDAY,
+                        Calendar.THURSDAY,
+                        Calendar.FRIDAY,
+                        Calendar.SATURDAY
+                    ),
+                    startHour = 0,
+                    startMinute = 0,
+                    endHour = 23,
+                    endMinute = 59
+                )
+            )
+        )
+        storage.saveBlockSets(listOf(alwaysOn, scheduled))
+
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        service.onAccessibilityEvent(createWindowStateChangedEvent("com.example.blocked"))
+
+        val intent = Shadows.shadowOf(app).nextStartedActivity
+        assertEquals(BlockedActivity::class.java.name, intent.component?.className)
+        assertEquals("Always On", intent.getStringExtra(BlockedActivity.EXTRA_BLOCK_SET_NAME))
+        assertEquals(alwaysOn.id, intent.getStringExtra(BlockedActivity.EXTRA_BLOCK_SET_ID))
+    }
+
+    @Test
     fun passwordInterventionsOverrideRandomAndRemainSequential() {
         val randomSet = BlockSet(
             name = "Random",

@@ -206,8 +206,9 @@ class AppBlockerService : AccessibilityService() {
         }
 
         if (policy.quotaBlocked) {
-            logDebug("blocked", "quota exceeded for ${blockSet.name}")
-            launchBlockedScreen(blockSet.name, blockSet.id, packageName)
+            val quotaBlockingBlockSet = policy.quotaBlockingBlockSet ?: blockSet
+            logDebug("blocked", "quota exceeded for ${quotaBlockingBlockSet.name}")
+            launchBlockedScreen(quotaBlockingBlockSet.name, quotaBlockingBlockSet.id, packageName)
             stopTracking()
             return
         }
@@ -230,9 +231,9 @@ class AppBlockerService : AccessibilityService() {
         if (currentTrackedPackage != packageName) {
             logDebug("track", "switch to blocked $packageName")
             stopTracking()
-            startTracking(packageName, blockSet)
+            startTracking(packageName, blockSet, policy.effectiveDisplayRemainingSeconds)
         }
-        updateOverlayWithLocalTracking(blockSet)
+        updateOverlayWithLocalTracking(blockSet, policy.effectiveDisplayRemainingSeconds)
     }
 
     private fun handleAppBlockerPackageEvent(className: String?, nowMs: Long) {
@@ -275,7 +276,7 @@ class AppBlockerService : AccessibilityService() {
         }
     }
 
-    private fun startTracking(packageName: String, blockSet: BlockSet) {
+    private fun startTracking(packageName: String, blockSet: BlockSet, initialDisplayRemainingSeconds: Int) {
         cancelPendingStop()
         currentTrackedPackage = packageName
         currentBlockSet = blockSet
@@ -289,7 +290,7 @@ class AppBlockerService : AccessibilityService() {
             )
         )
 
-        updateOverlayWithLocalTracking(blockSet)
+        updateOverlayWithLocalTracking(blockSet, initialDisplayRemainingSeconds)
         overlayController.applyStoredOverlayPosition(packageName)
 
         overlayUpdateRunnable = object : Runnable {
@@ -299,7 +300,7 @@ class AppBlockerService : AccessibilityService() {
                     val trackedPackage = currentTrackedPackage ?: return
                     val policy = storage.resolveEffectiveAppPolicy(trackedPackage, nowMs)
                     val updatedBlockSet = policy?.primaryBlockSet
-                    if (updatedBlockSet != null && policy != null) {
+                    if (updatedBlockSet != null) {
 
                         applySessionState(
                             sessionTracker.updateForWindowBoundary(
@@ -313,7 +314,12 @@ class AppBlockerService : AccessibilityService() {
                         val localRemainingSeconds =
                             sessionTracker.localRemainingSeconds(currentSessionState(), nowMs)
                         if (policy.quotaBlocked || localRemainingSeconds <= 0) {
-                            launchBlockedScreen(updatedBlockSet.name, updatedBlockSet.id, trackedPackage)
+                            val quotaBlockingBlockSet = policy.quotaBlockingBlockSet ?: updatedBlockSet
+                            launchBlockedScreen(
+                                quotaBlockingBlockSet.name,
+                                quotaBlockingBlockSet.id,
+                                trackedPackage
+                            )
                             stopTracking()
                             return
                         }
@@ -330,7 +336,12 @@ class AppBlockerService : AccessibilityService() {
                             stopTracking()
                             return
                         }
-                        updateOverlayWithLocalTracking(updatedBlockSet)
+                        val effectiveDisplayRemainingSeconds = storage.getEffectiveDisplayRemainingSeconds(
+                            activeBlockSets = policy.activeBlockSets,
+                            quotaRemainingByBlockSetId = mapOf(updatedBlockSet.id to localRemainingSeconds),
+                            nowMs = nowMs
+                        ) ?: localRemainingSeconds
+                        updateOverlayWithLocalTracking(updatedBlockSet, effectiveDisplayRemainingSeconds)
                     } else {
                         stopTracking()
                         return
@@ -448,18 +459,23 @@ class AppBlockerService : AccessibilityService() {
         overlayController.updateOverlay(blockSet)
     }
 
-    private fun updateOverlayWithLocalTracking(blockSet: BlockSet?) {
+    private fun updateOverlayWithLocalTracking(
+        blockSet: BlockSet?,
+        effectiveDisplayRemainingSeconds: Int? = null
+    ) {
         if (blockSet == null) {
             logDebug("overlay", "local update with null blockSet")
             updateOverlay(null)
             return
         }
 
-        val localRemainingSeconds = getLocalRemainingSeconds()
-        val displaySeconds = storage.getDisplayRemainingSeconds(
-            blockSet = blockSet,
-            quotaRemainingSeconds = localRemainingSeconds
-        )
+        val displaySeconds = effectiveDisplayRemainingSeconds ?: run {
+            val localRemainingSeconds = getLocalRemainingSeconds()
+            storage.getDisplayRemainingSeconds(
+                blockSet = blockSet,
+                quotaRemainingSeconds = localRemainingSeconds
+            )
+        }
         overlayController.updateOverlayWithLocalTracking(blockSet, displaySeconds)
     }
 

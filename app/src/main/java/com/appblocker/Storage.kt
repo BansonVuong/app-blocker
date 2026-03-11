@@ -77,6 +77,8 @@ data class EffectiveAppPolicy(
     val activeBlockSets: List<BlockSet>,
     val primaryBlockSet: BlockSet,
     val quotaBlocked: Boolean,
+    val quotaBlockingBlockSet: BlockSet?,
+    val effectiveDisplayRemainingSeconds: Int,
     val interventionChallenges: List<InterventionChallenge>,
     val interventionSignature: String
 )
@@ -228,6 +230,17 @@ class Storage(context: Context) {
             val remaining = remainingByBlockSetId[blockSet.id] ?: Int.MAX_VALUE
             remaining <= 0 && !isOverrideActive(blockSet, nowMs)
         }
+        val quotaBlockingBlockSet = activeBlockSets
+            .filter { blockSet ->
+                val remaining = remainingByBlockSetId[blockSet.id] ?: Int.MAX_VALUE
+                remaining <= 0 && !isOverrideActive(blockSet, nowMs)
+            }
+            .minWithOrNull(effectiveStrictnessComparator(remainingByBlockSetId))
+        val effectiveDisplayRemainingSeconds = getEffectiveDisplayRemainingSeconds(
+            activeBlockSets = activeBlockSets,
+            quotaRemainingByBlockSetId = remainingByBlockSetId,
+            nowMs = nowMs
+        ) ?: 0
 
         val interventionChallenges = buildInterventionChallenges(activeBlockSets)
         val interventionSignature = interventionChallenges.joinToString("|") { challenge ->
@@ -244,6 +257,8 @@ class Storage(context: Context) {
             activeBlockSets = activeBlockSets,
             primaryBlockSet = primaryBlockSet,
             quotaBlocked = quotaBlocked,
+            quotaBlockingBlockSet = quotaBlockingBlockSet,
+            effectiveDisplayRemainingSeconds = effectiveDisplayRemainingSeconds,
             interventionChallenges = interventionChallenges,
             interventionSignature = interventionSignature
         )
@@ -563,6 +578,22 @@ class Storage(context: Context) {
     ): Int {
         val overrideRemainingSeconds = getOverrideRemainingSeconds(blockSet, nowMs)
         return maxOf(quotaRemainingSeconds, overrideRemainingSeconds)
+    }
+
+    fun getEffectiveDisplayRemainingSeconds(
+        activeBlockSets: List<BlockSet>,
+        quotaRemainingByBlockSetId: Map<String, Int> = emptyMap(),
+        nowMs: Long = System.currentTimeMillis()
+    ): Int? {
+        if (activeBlockSets.isEmpty()) return null
+        return activeBlockSets.minOf { blockSet ->
+            val quotaRemainingSeconds = quotaRemainingByBlockSetId[blockSet.id] ?: getRemainingSeconds(blockSet)
+            getDisplayRemainingSeconds(
+                blockSet = blockSet,
+                quotaRemainingSeconds = quotaRemainingSeconds,
+                nowMs = nowMs
+            )
+        }
     }
 
     fun getUsageSecondsLastWeek(packageNames: Set<String>): Map<String, Int> {

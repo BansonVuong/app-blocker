@@ -12,24 +12,22 @@ data class TimePeriod(
     var endMinute: Int = 59
 ) {
     fun isActiveNow(calendar: Calendar = Calendar.getInstance()): Boolean {
-        val dayOfWeek = calendar.get(Calendar.DAY_OF_WEEK)
+        if (days.isEmpty()) return false
 
+        val dayOfWeek = calendar.get(Calendar.DAY_OF_WEEK)
         val nowMinutes = calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE)
         val startMinutes = startHour * 60 + startMinute
         val endMinutes = endHour * 60 + endMinute
+        val selectedDays = days.toSet()
 
-        // Same day window
         if (startMinutes <= endMinutes) {
-            return days.contains(dayOfWeek) && nowMinutes in startMinutes..endMinutes
-        }
-
-        // Overnight window (e.g., 11 PM to 6 AM)
-        if (days.contains(dayOfWeek) && nowMinutes >= startMinutes) {
-            return true
+            return dayOfWeek in selectedDays && nowMinutes in startMinutes..endMinutes
         }
 
         val previousDay = if (dayOfWeek == Calendar.SUNDAY) Calendar.SATURDAY else dayOfWeek - 1
-        return days.contains(previousDay) && nowMinutes <= endMinutes
+        val matchesSelectedDayLateWindow = dayOfWeek in selectedDays && nowMinutes >= startMinutes
+        val matchesPreviousDayEarlyWindow = previousDay in selectedDays && nowMinutes <= endMinutes
+        return matchesSelectedDayLateWindow || matchesPreviousDayEarlyWindow
     }
 
     fun formatDays(): String {

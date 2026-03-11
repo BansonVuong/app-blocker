@@ -52,6 +52,29 @@ class BlockSetTest {
         assertFalse(period.isActiveNow(calendarFor(Calendar.TUESDAY, 2, 0)))
     }
 
+    @Test
+    fun everyDayOvernightPeriodMatchesLateEveningExample() {
+        val period = TimePeriod(
+            days = mutableListOf(
+                Calendar.SUNDAY,
+                Calendar.MONDAY,
+                Calendar.TUESDAY,
+                Calendar.WEDNESDAY,
+                Calendar.THURSDAY,
+                Calendar.FRIDAY,
+                Calendar.SATURDAY
+            ),
+            startHour = 22,
+            startMinute = 0,
+            endHour = 6,
+            endMinute = 0
+        )
+
+        assertTrue(period.isActiveNow(calendarFor(Calendar.TUESDAY, 22, 46)))
+        assertTrue(period.isActiveNow(calendarFor(Calendar.WEDNESDAY, 1, 15)))
+        assertFalse(period.isActiveNow(calendarFor(Calendar.TUESDAY, 21, 59)))
+    }
+
     private fun calendarFor(dayOfWeek: Int, hour: Int, minute: Int): Calendar {
         return Calendar.getInstance().apply {
             set(Calendar.DAY_OF_WEEK, dayOfWeek)

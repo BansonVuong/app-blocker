@@ -231,7 +231,52 @@ class StorageTest {
     }
 
     @Test
-    fun displayRemainingSecondsUsesMostGenerousAllowance() {
+    fun exhaustedOverlapTracksQuotaBlockingBlockSetSeparatelyFromPrimary() {
+        val storage = Storage(context)
+        val alwaysOn = BlockSet(
+            name = "Always On",
+            apps = mutableListOf("com.example.app"),
+            quotaMinutes = 0.0,
+            windowMinutes = 60
+        )
+        val scheduled = BlockSet(
+            name = "Scheduled",
+            apps = mutableListOf("com.example.app"),
+            quotaMinutes = 10.0,
+            windowMinutes = 60,
+            scheduleEnabled = true,
+            intervention = BlockSet.INTERVENTION_RANDOM,
+            timePeriods = mutableListOf(
+                TimePeriod(
+                    days = mutableListOf(Calendar.MONDAY),
+                    startHour = 9,
+                    startMinute = 0,
+                    endHour = 17,
+                    endMinute = 0
+                )
+            )
+        )
+        storage.saveBlockSets(listOf(alwaysOn, scheduled))
+
+        val calendar = Calendar.getInstance().apply {
+            set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+            set(Calendar.HOUR_OF_DAY, 10)
+            set(Calendar.MINUTE, 0)
+        }
+
+        val policy = storage.resolveEffectiveAppPolicy(
+            packageName = "com.example.app",
+            nowMs = 1_000L,
+            calendar = calendar
+        )
+
+        assertEquals("Scheduled", policy?.primaryBlockSet?.name)
+        assertTrue(policy?.quotaBlocked == true)
+        assertEquals("Always On", policy?.quotaBlockingBlockSet?.name)
+    }
+
+    @Test
+    fun displayRemainingSecondsUsesMostGenerousAllowancePerBlockSet() {
         val storage = Storage(context)
         val blockSet = BlockSet(
             name = "Social",
@@ -257,5 +302,96 @@ class StorageTest {
                 nowMs = nowMs
             )
         )
+    }
+
+    @Test
+    fun effectiveDisplayRemainingSecondsUsesStrictestActiveBlockSet() {
+        val storage = Storage(context)
+        val stricter = BlockSet(
+            name = "Stricter",
+            apps = mutableListOf("com.example.app"),
+            quotaMinutes = 1.0,
+            windowMinutes = 60,
+            allowOverride = true
+        )
+        val looser = BlockSet(
+            name = "Looser",
+            apps = mutableListOf("com.example.app"),
+            quotaMinutes = 2.0,
+            windowMinutes = 60,
+            allowOverride = true
+        )
+        val nowMs = 31_000L
+
+        storage.setOverrideMinutes(stricter.id, 1, 1_000L)
+        storage.setOverrideMinutes(looser.id, 1, 1_000L)
+
+        val effectiveDisplayRemainingSeconds = storage.getEffectiveDisplayRemainingSeconds(
+            activeBlockSets = listOf(stricter, looser),
+            quotaRemainingByBlockSetId = mapOf(
+                stricter.id to 60,
+                looser.id to 120
+            ),
+            nowMs = nowMs
+        )
+
+        assertEquals(60, effectiveDisplayRemainingSeconds)
+    }
+
+    @Test
+    fun policyUsesStrictestDisplayRemainingAcrossOverlappingActiveBlockSets() {
+        val storage = Storage(context)
+        val stricter = BlockSet(
+            name = "Stricter",
+            apps = mutableListOf("com.example.app"),
+            quotaMinutes = 1.0,
+            windowMinutes = 60,
+            scheduleEnabled = true,
+            allowOverride = true,
+            timePeriods = mutableListOf(
+                TimePeriod(
+                    days = mutableListOf(Calendar.MONDAY),
+                    startHour = 9,
+                    startMinute = 0,
+                    endHour = 17,
+                    endMinute = 0
+                )
+            )
+        )
+        val looser = BlockSet(
+            name = "Looser",
+            apps = mutableListOf("com.example.app"),
+            quotaMinutes = 2.0,
+            windowMinutes = 60,
+            scheduleEnabled = true,
+            allowOverride = true,
+            timePeriods = mutableListOf(
+                TimePeriod(
+                    days = mutableListOf(Calendar.MONDAY),
+                    startHour = 9,
+                    startMinute = 0,
+                    endHour = 17,
+                    endMinute = 0
+                )
+            )
+        )
+        storage.saveBlockSets(listOf(stricter, looser))
+
+        val calendar = Calendar.getInstance().apply {
+            set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+            set(Calendar.HOUR_OF_DAY, 10)
+            set(Calendar.MINUTE, 0)
+        }
+        val nowMs = 31_000L
+        storage.setOverrideMinutes(stricter.id, 1, 1_000L)
+        storage.setOverrideMinutes(looser.id, 1, 1_000L)
+
+        val policy = storage.resolveEffectiveAppPolicy(
+            packageName = "com.example.app",
+            nowMs = nowMs,
+            calendar = calendar
+        )
+
+        assertEquals(60, policy?.effectiveDisplayRemainingSeconds)
     }
 }
