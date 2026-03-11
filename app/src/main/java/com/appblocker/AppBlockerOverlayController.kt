@@ -46,12 +46,7 @@ class AppBlockerOverlayController(
             return
         }
 
-        val overrideSeconds = storage.getOverrideRemainingSeconds(blockSet)
-        val remainingSeconds = if (overrideSeconds > 0) {
-            overrideSeconds
-        } else {
-            storage.getRemainingSeconds(blockSet)
-        }
+        val remainingSeconds = storage.getDisplayRemainingSeconds(blockSet)
 
         val view = ensureOverlayView()
         view.text = formatRemainingTime(remainingSeconds)

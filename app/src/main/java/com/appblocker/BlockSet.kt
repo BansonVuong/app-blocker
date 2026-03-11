@@ -13,21 +13,21 @@ data class TimePeriod(
 ) {
     fun isActiveNow(calendar: Calendar = Calendar.getInstance()): Boolean {
         val dayOfWeek = calendar.get(Calendar.DAY_OF_WEEK)
-        if (!days.contains(dayOfWeek)) return false
 
         val nowMinutes = calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE)
         val startMinutes = startHour * 60 + startMinute
         val endMinutes = endHour * 60 + endMinute
 
         // Same day window
-        if(startMinutes <= endMinutes) {
+        if (startMinutes <= endMinutes) {
             return days.contains(dayOfWeek) && nowMinutes in startMinutes..endMinutes
         }
+
         // Overnight window (e.g., 11 PM to 6 AM)
-        if(days.contains(dayOfWeek) && nowMinutes >= startMinutes) {
+        if (days.contains(dayOfWeek) && nowMinutes >= startMinutes) {
             return true
         }
-        
+
         val previousDay = if (dayOfWeek == Calendar.SUNDAY) Calendar.SATURDAY else dayOfWeek - 1
         return days.contains(previousDay) && nowMinutes <= endMinutes
     }

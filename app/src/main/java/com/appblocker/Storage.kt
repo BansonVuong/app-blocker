@@ -221,12 +221,7 @@ class Storage(context: Context) {
 
         val remainingByBlockSetId = activeBlockSets.associate { it.id to getRemainingSeconds(it) }
         val primaryBlockSet = activeBlockSets.minWithOrNull(
-            compareBy<BlockSet>(
-                { remainingByBlockSetId[it.id] ?: Int.MAX_VALUE },
-                { it.quotaMinutes },
-                { it.windowMinutes },
-                { it.id }
-            )
+            effectiveStrictnessComparator(remainingByBlockSetId)
         ) ?: return null
 
         val quotaBlocked = activeBlockSets.any { blockSet ->
@@ -275,7 +270,10 @@ class Storage(context: Context) {
             return emptyList()
         }
         val strictestCodeLength = randomInterventions.maxOf { it.interventionCodeLength.coerceAtLeast(1) }
-        val strictestBlockSet = randomInterventions.minWithOrNull(compareBy(BlockSet::quotaMinutes, BlockSet::id))
+        val remainingByBlockSetId = randomInterventions.associate { it.id to getRemainingSeconds(it) }
+        val strictestBlockSet = randomInterventions.minWithOrNull(
+            effectiveStrictnessComparator(remainingByBlockSetId)
+        )
             ?: randomInterventions.first()
         return listOf(
             InterventionChallenge(
@@ -285,6 +283,27 @@ class Storage(context: Context) {
                 randomCodeLength = strictestCodeLength
             )
         )
+    }
+
+    private fun effectiveStrictnessComparator(
+        remainingByBlockSetId: Map<String, Int>
+    ): Comparator<BlockSet> {
+        return compareBy<BlockSet>(
+            { if (it.scheduleEnabled) 0 else 1 },
+            { -interventionStrictness(it.intervention) },
+            { remainingByBlockSetId[it.id] ?: Int.MAX_VALUE },
+            { it.quotaMinutes },
+            { it.windowMinutes },
+            { it.id }
+        )
+    }
+
+    private fun interventionStrictness(intervention: Int): Int {
+        return when (intervention) {
+            BlockSet.INTERVENTION_PASSWORD -> 2
+            BlockSet.INTERVENTION_RANDOM -> 1
+            else -> 0
+        }
     }
 
     fun getOverlayPosition(packageName: String): Pair<Int, Int>? {
@@ -535,6 +554,15 @@ class Storage(context: Context) {
         val key = KEY_OVERRIDE_END_PREFIX + blockSet.id
         val endMs = getActiveEndMillis(key, nowMs) { clearOverride(blockSet.id) } ?: return 0
         return ((endMs - nowMs) / 1000).toInt()
+    }
+
+    fun getDisplayRemainingSeconds(
+        blockSet: BlockSet,
+        quotaRemainingSeconds: Int = getRemainingSeconds(blockSet),
+        nowMs: Long = System.currentTimeMillis()
+    ): Int {
+        val overrideRemainingSeconds = getOverrideRemainingSeconds(blockSet, nowMs)
+        return maxOf(quotaRemainingSeconds, overrideRemainingSeconds)
     }
 
     fun getUsageSecondsLastWeek(packageNames: Set<String>): Map<String, Int> {

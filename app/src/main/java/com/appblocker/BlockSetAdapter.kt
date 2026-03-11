@@ -71,8 +71,10 @@ class BlockSetAdapter(
             }
 
             val remainingSeconds = storage.getRemainingSeconds(blockSet)
-            val overrideSeconds = storage.getOverrideRemainingSeconds(blockSet)
-            val displaySeconds = if (overrideSeconds > 0) overrideSeconds else remainingSeconds
+            val displaySeconds = storage.getDisplayRemainingSeconds(
+                blockSet = blockSet,
+                quotaRemainingSeconds = remainingSeconds
+            )
             val totalSeconds = (blockSet.quotaMinutes * 60).roundToInt()
             val usedSeconds = totalSeconds - remainingSeconds
             val progress = if (totalSeconds > 0) (usedSeconds * 100) / totalSeconds else 0

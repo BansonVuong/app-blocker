@@ -456,8 +456,10 @@ class AppBlockerService : AccessibilityService() {
         }
 
         val localRemainingSeconds = getLocalRemainingSeconds()
-        val overrideSeconds = storage.getOverrideRemainingSeconds(blockSet)
-        val displaySeconds = if (overrideSeconds > 0) overrideSeconds else localRemainingSeconds
+        val displaySeconds = storage.getDisplayRemainingSeconds(
+            blockSet = blockSet,
+            quotaRemainingSeconds = localRemainingSeconds
+        )
         overlayController.updateOverlayWithLocalTracking(blockSet, displaySeconds)
     }
 

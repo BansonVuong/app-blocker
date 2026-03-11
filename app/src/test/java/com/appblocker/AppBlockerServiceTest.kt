@@ -20,6 +20,7 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows
 import org.robolectric.annotation.Config
+import java.util.Calendar
 
 @Suppress("DEPRECATION")
 @RunWith(RobolectricTestRunner::class)
@@ -338,6 +339,49 @@ class AppBlockerServiceTest {
         assertEquals(1, steps.size)
         assertEquals(BlockSet.INTERVENTION_RANDOM, steps.first().mode)
         assertEquals(30, steps.first().randomCodeLength)
+    }
+
+    @Test
+    fun overlappingScheduledInterventionUsesScheduledBlockSetAsPrimary() {
+        val alwaysOn = BlockSet(
+            name = "Always On",
+            apps = mutableListOf("com.example.blocked"),
+            quotaMinutes = 1.0,
+            windowMinutes = 60
+        )
+        val scheduled = BlockSet(
+            name = "Scheduled",
+            apps = mutableListOf("com.example.blocked"),
+            quotaMinutes = 10.0,
+            windowMinutes = 60,
+            scheduleEnabled = true,
+            intervention = BlockSet.INTERVENTION_RANDOM,
+            interventionCodeLength = 20,
+            timePeriods = mutableListOf(
+                TimePeriod(
+                    days = mutableListOf(Calendar.MONDAY),
+                    startHour = 9,
+                    startMinute = 0,
+                    endHour = 17,
+                    endMinute = 0
+                )
+            )
+        )
+        storage.saveBlockSets(listOf(alwaysOn, scheduled))
+
+        val calendar = Calendar.getInstance().apply {
+            set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+            set(Calendar.HOUR_OF_DAY, 10)
+            set(Calendar.MINUTE, 0)
+        }
+        val policy = storage.resolveEffectiveAppPolicy(
+            packageName = "com.example.blocked",
+            nowMs = 1_000L,
+            calendar = calendar
+        )
+
+        assertEquals("Scheduled", policy?.primaryBlockSet?.name)
+        assertEquals(BlockSet.INTERVENTION_RANDOM, policy?.primaryBlockSet?.intervention)
     }
 
     @Test

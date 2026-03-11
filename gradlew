@@ -98,8 +98,13 @@ Please set the JAVA_HOME variable in your environment to match the
 location of your Java installation."
     fi
 else
-    JAVACMD="java"
-    which java >/dev/null 2>&1 || die "ERROR: JAVA_HOME is not set and no 'java' command could be found in your PATH.
+    if [ "$darwin" = "true" ] && [ -x "/Applications/Android Studio.app/Contents/jbr/Contents/Home/bin/java" ] ; then
+        JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+        JAVACMD="$JAVA_HOME/bin/java"
+    else
+        JAVACMD="java"
+    fi
+    which "$JAVACMD" >/dev/null 2>&1 || [ -x "$JAVACMD" ] || die "ERROR: JAVA_HOME is not set and no usable 'java' command could be found.
 
 Please set the JAVA_HOME variable in your environment to match the
 location of your Java installation."

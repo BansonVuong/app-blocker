@@ -10,6 +10,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.util.Calendar
 
 @RunWith(RobolectricTestRunner::class)
 class StorageTest {
@@ -183,5 +184,78 @@ class StorageTest {
 
         assertTrue(storage.consumeInterventionBypass("com.example.app"))
         assertFalse(storage.consumeInterventionBypass("com.example.app"))
+    }
+
+    @Test
+    fun scheduledBlockSetBecomesPrimaryWhenOverlappingAlwaysOnSet() {
+        val storage = Storage(context)
+        val alwaysOn = BlockSet(
+            name = "Always On",
+            apps = mutableListOf("com.example.app"),
+            quotaMinutes = 1.0,
+            windowMinutes = 60
+        )
+        val scheduled = BlockSet(
+            name = "Scheduled",
+            apps = mutableListOf("com.example.app"),
+            quotaMinutes = 10.0,
+            windowMinutes = 60,
+            scheduleEnabled = true,
+            intervention = BlockSet.INTERVENTION_RANDOM,
+            timePeriods = mutableListOf(
+                TimePeriod(
+                    days = mutableListOf(Calendar.MONDAY),
+                    startHour = 9,
+                    startMinute = 0,
+                    endHour = 17,
+                    endMinute = 0
+                )
+            )
+        )
+        storage.saveBlockSets(listOf(alwaysOn, scheduled))
+
+        val calendar = Calendar.getInstance().apply {
+            set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+            set(Calendar.HOUR_OF_DAY, 10)
+            set(Calendar.MINUTE, 0)
+        }
+
+        val policy = storage.resolveEffectiveAppPolicy(
+            packageName = "com.example.app",
+            nowMs = 1_000L,
+            calendar = calendar
+        )
+
+        assertEquals("Scheduled", policy?.primaryBlockSet?.name)
+        assertEquals(BlockSet.INTERVENTION_RANDOM, policy?.primaryBlockSet?.intervention)
+    }
+
+    @Test
+    fun displayRemainingSecondsUsesMostGenerousAllowance() {
+        val storage = Storage(context)
+        val blockSet = BlockSet(
+            name = "Social",
+            allowOverride = true
+        )
+        val nowMs = 1_000L
+
+        storage.setOverrideMinutes(blockSet.id, 1, nowMs)
+
+        assertEquals(
+            120,
+            storage.getDisplayRemainingSeconds(
+                blockSet = blockSet,
+                quotaRemainingSeconds = 120,
+                nowMs = nowMs + 30_000L
+            )
+        )
+        assertEquals(
+            60,
+            storage.getDisplayRemainingSeconds(
+                blockSet = blockSet,
+                quotaRemainingSeconds = 30,
+                nowMs = nowMs
+            )
+        )
     }
 }
