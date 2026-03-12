@@ -1062,6 +1062,35 @@ class AppBlockerServiceTest {
     }
 
     @Test
+    fun localQuotaExpiryDoesNotRelaunchBlockScreenWhileOverrideIsActive() {
+        val blockSet = BlockSet(
+            name = "Focus",
+            apps = mutableListOf("com.example.blocked"),
+            quotaMinutes = 1.0,
+            windowMinutes = 60,
+            allowOverride = true
+        )
+        storage.saveBlockSets(listOf(blockSet))
+        storage.setOverrideMinutes(blockSet.id, 10)
+
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        service.onAccessibilityEvent(createWindowStateChangedEvent("com.example.blocked"))
+        drainStartedActivitiesCount()
+
+        setPrivateField(service, "sessionStartTimeMs", System.currentTimeMillis() - 61_000L)
+        setPrivateField(service, "initialRemainingSeconds", 60)
+
+        val runnable = getPrivateField(service, "overlayUpdateRunnable") as Runnable
+        runnable.run()
+
+        assertNull(Shadows.shadowOf(app).nextStartedActivity)
+        assertEquals(
+            "com.example.blocked",
+            getPrivateField(service, "currentTrackedPackage") as String?
+        )
+    }
+
+    @Test
     fun ignoresNonWindowStateChangedEvents() {
         val blockSet = BlockSet(
             name = "Social",

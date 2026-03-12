@@ -266,14 +266,6 @@ class BlockedActivity : AppCompatActivity() {
     }
 
     private fun updateUnblockTime(blockSetId: String?) {
-        val blockSet = blockSetId?.let { id ->
-            storage.getBlockSets().find { it.id == id }
-        }
-        if (blockSet == null) {
-            binding.textUnblockTime.visibility = View.GONE
-            return
-        }
-
         if (storage.isLockdownActive()) {
             val unblockAtMillis = storage.getLockdownEndMillis() ?: return
             val date = Date(unblockAtMillis)
@@ -284,12 +276,9 @@ class BlockedActivity : AppCompatActivity() {
             return
         }
 
-        if (storage.isOverrideActive(blockSet)) {
-            finish()
-            return
-        }
-
-        if (!storage.isQuotaExceeded(blockSet)) {
+        val blockSet = resolveQuotaBlockingBlockSet(blockSetId)
+        if (blockSet == null) {
+            binding.textUnblockTime.visibility = View.GONE
             finish()
             return
         }
@@ -306,5 +295,24 @@ class BlockedActivity : AppCompatActivity() {
         val formatter = SimpleDateFormat("h:mm a", Locale.getDefault())
         val time = formatter.format(date)
         binding.textUnblockTime.text = getString(R.string.unblocked_at, time)
+    }
+
+    private fun resolveQuotaBlockingBlockSet(fallbackBlockSetId: String?): BlockSet? {
+        val returnPackage = intent.getStringExtra(EXTRA_RETURN_PACKAGE)
+        if (!returnPackage.isNullOrBlank()) {
+            val policy = storage.resolveEffectiveAppPolicy(returnPackage)
+            if (policy?.quotaBlocked == true) {
+                return policy.quotaBlockingBlockSet ?: policy.primaryBlockSet
+            }
+            return null
+        }
+
+        val fallbackBlockSet = fallbackBlockSetId?.let { id ->
+            storage.getBlockSets().find { it.id == id }
+        } ?: return null
+
+        if (storage.isOverrideActive(fallbackBlockSet)) return null
+        if (!storage.isQuotaExceeded(fallbackBlockSet)) return null
+        return fallbackBlockSet
     }
 }

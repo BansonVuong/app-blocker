@@ -6,6 +6,7 @@ import android.view.View
 import android.widget.TextView
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -74,6 +75,39 @@ class BlockedActivityTest {
         assertEquals(
             app.getString(R.string.unblocked_at, app.getString(R.string.never)),
             unblockTime.text.toString()
+        )
+    }
+
+    @Test
+    fun keepsQuotaScreenVisibleWhenDifferentOverlappingBlockSetIsStillBlocking() {
+        val storage = Storage(app)
+        val availableBlockSet = BlockSet(
+            name = "Available",
+            apps = mutableListOf("com.example.blocked"),
+            quotaMinutes = 30.0,
+            windowMinutes = 60
+        )
+        val blockingBlockSet = BlockSet(
+            name = "Blocking",
+            apps = mutableListOf("com.example.blocked"),
+            quotaMinutes = 0.0,
+            windowMinutes = 60
+        )
+        storage.saveBlockSets(listOf(availableBlockSet, blockingBlockSet))
+
+        val activity = Robolectric.buildActivity(
+            BlockedActivity::class.java,
+            blockedIntent(mode = BlockedActivity.MODE_QUOTA).apply {
+                putExtra(BlockedActivity.EXTRA_BLOCK_SET_NAME, availableBlockSet.name)
+                putExtra(BlockedActivity.EXTRA_BLOCK_SET_ID, availableBlockSet.id)
+                putExtra(BlockedActivity.EXTRA_RETURN_PACKAGE, "com.example.blocked")
+            }
+        ).setup().get()
+
+        assertFalse(activity.isFinishing)
+        assertEquals(
+            "\"${blockingBlockSet.name}\"",
+            activity.findViewById<TextView>(R.id.textBlockSetName).text.toString()
         )
     }
 

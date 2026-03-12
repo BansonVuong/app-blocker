@@ -313,7 +313,12 @@ class AppBlockerService : AccessibilityService() {
 
                         val localRemainingSeconds =
                             sessionTracker.localRemainingSeconds(currentSessionState(), nowMs)
-                        if (policy.quotaBlocked || localRemainingSeconds <= 0) {
+                        val effectiveDisplayRemainingSeconds = storage.getEffectiveDisplayRemainingSeconds(
+                            activeBlockSets = policy.activeBlockSets,
+                            quotaRemainingByBlockSetId = mapOf(updatedBlockSet.id to localRemainingSeconds),
+                            nowMs = nowMs
+                        ) ?: localRemainingSeconds
+                        if (policy.quotaBlocked || effectiveDisplayRemainingSeconds <= 0) {
                             val quotaBlockingBlockSet = policy.quotaBlockingBlockSet ?: updatedBlockSet
                             launchBlockedScreen(
                                 quotaBlockingBlockSet.name,
@@ -336,11 +341,6 @@ class AppBlockerService : AccessibilityService() {
                             stopTracking()
                             return
                         }
-                        val effectiveDisplayRemainingSeconds = storage.getEffectiveDisplayRemainingSeconds(
-                            activeBlockSets = policy.activeBlockSets,
-                            quotaRemainingByBlockSetId = mapOf(updatedBlockSet.id to localRemainingSeconds),
-                            nowMs = nowMs
-                        ) ?: localRemainingSeconds
                         updateOverlayWithLocalTracking(updatedBlockSet, effectiveDisplayRemainingSeconds)
                     } else {
                         stopTracking()
