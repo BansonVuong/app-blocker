@@ -394,4 +394,102 @@ class StorageTest {
 
         assertEquals(60, policy?.effectiveDisplayRemainingSeconds)
     }
+
+    @Test
+    fun positiveQuotaUnblocksAtWindowEnd() {
+        val storage = Storage(context)
+        val blockSet = BlockSet(
+            name = "Social",
+            quotaMinutes = 1.0,
+            windowMinutes = 60
+        )
+
+        assertEquals(3_600_000L, storage.getQuotaUnblockedAtMillis(blockSet, nowMs = 1_000L))
+    }
+
+    @Test
+    fun zeroQuotaWithoutScheduleNeverUnblocks() {
+        val storage = Storage(context)
+        val blockSet = BlockSet(
+            name = "Always On",
+            quotaMinutes = 0.0,
+            scheduleEnabled = false
+        )
+
+        assertNull(storage.getQuotaUnblockedAtMillis(blockSet, nowMs = 1_000L))
+    }
+
+    @Test
+    fun zeroQuotaScheduledBlockUnblocksAtNextInactiveMinute() {
+        val storage = Storage(context)
+        val blockSet = BlockSet(
+            name = "Work Hours",
+            quotaMinutes = 0.0,
+            scheduleEnabled = true,
+            timePeriods = mutableListOf(
+                TimePeriod(
+                    days = mutableListOf(Calendar.MONDAY),
+                    startHour = 9,
+                    startMinute = 0,
+                    endHour = 17,
+                    endMinute = 0
+                )
+            )
+        )
+        val calendar = Calendar.getInstance().apply {
+            set(2026, Calendar.MARCH, 9, 10, 0, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+
+        val unblockAtMillis = storage.getQuotaUnblockedAtMillis(
+            blockSet = blockSet,
+            nowMs = calendar.timeInMillis,
+            calendar = calendar
+        )
+
+        val expected = (calendar.clone() as Calendar).apply {
+            set(Calendar.HOUR_OF_DAY, 17)
+            set(Calendar.MINUTE, 1)
+        }.timeInMillis
+        assertEquals(expected, unblockAtMillis)
+    }
+
+    @Test
+    fun zeroQuotaScheduledBlockCanStillNeverUnblock() {
+        val storage = Storage(context)
+        val blockSet = BlockSet(
+            name = "All Day",
+            quotaMinutes = 0.0,
+            scheduleEnabled = true,
+            timePeriods = mutableListOf(
+                TimePeriod(
+                    days = mutableListOf(
+                        Calendar.SUNDAY,
+                        Calendar.MONDAY,
+                        Calendar.TUESDAY,
+                        Calendar.WEDNESDAY,
+                        Calendar.THURSDAY,
+                        Calendar.FRIDAY,
+                        Calendar.SATURDAY
+                    ),
+                    startHour = 0,
+                    startMinute = 0,
+                    endHour = 23,
+                    endMinute = 59
+                )
+            )
+        )
+        val calendar = Calendar.getInstance().apply {
+            set(2026, Calendar.MARCH, 9, 10, 0, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+
+        assertNull(
+            storage.getQuotaUnblockedAtMillis(
+                blockSet = blockSet,
+                nowMs = calendar.timeInMillis,
+                calendar = calendar
+            )
+        )
+    }
 }

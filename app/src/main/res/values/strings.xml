@@ -25,6 +25,7 @@
     <string name="quota_exceeded">Quota Exceeded</string>
     <string name="quota_exceeded_message">You\'ve used your time limit for this block set. Wait for your usage to expire.</string>
     <string name="unblocked_at">Unblocked at %s</string>
+    <string name="never">Never</string>
     <string name="go_back">Go Back</string>
     <string name="accessibility_service_description">App Blocker needs accessibility access to detect when blocked apps are opened and enforce your usage limits.</string>
     <string name="enable_accessibility">Enable Accessibility Service</string>

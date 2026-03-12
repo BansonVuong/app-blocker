@@ -295,12 +295,16 @@ class BlockedActivity : AppCompatActivity() {
         }
 
         binding.textBlockSetName.text = "\"${blockSet.name}\""
+        binding.textUnblockTime.visibility = View.VISIBLE
+        val unblockAtMillis = storage.getQuotaUnblockedAtMillis(blockSet)
+        if (unblockAtMillis == null) {
+            binding.textUnblockTime.text = getString(R.string.unblocked_at, getString(R.string.never))
+            return
+        }
 
-        val unblockAtMillis = storage.getWindowEndMillis(blockSet)
         val date = Date(unblockAtMillis)
         val formatter = SimpleDateFormat("h:mm a", Locale.getDefault())
         val time = formatter.format(date)
-        binding.textUnblockTime.visibility = View.VISIBLE
         binding.textUnblockTime.text = getString(R.string.unblocked_at, time)
     }
 }

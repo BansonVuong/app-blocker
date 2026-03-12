@@ -7,6 +7,7 @@ import android.content.SharedPreferences
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import java.util.Calendar
+import java.util.Date
 import kotlin.math.roundToInt
 
 internal data class SimpleUsageEvent(
@@ -432,6 +433,20 @@ class Storage(context: Context) {
         return windowStart + windowMs
     }
 
+    fun getQuotaUnblockedAtMillis(
+        blockSet: BlockSet,
+        nowMs: Long = System.currentTimeMillis(),
+        calendar: Calendar = Calendar.getInstance()
+    ): Long? {
+        if (blockSet.quotaMinutes > 0) {
+            return getWindowEndMillis(blockSet, nowMs)
+        }
+        if (!blockSet.scheduleEnabled || blockSet.timePeriods.isEmpty()) {
+            return null
+        }
+        return getNextScheduleInactiveMillis(blockSet, nowMs, calendar)
+    }
+
     fun isQuotaExceeded(blockSet: BlockSet): Boolean {
         return getRemainingSeconds(blockSet) <= 0
     }
@@ -705,6 +720,32 @@ class Storage(context: Context) {
             return null
         }
         return endMs
+    }
+
+    private fun getNextScheduleInactiveMillis(
+        blockSet: BlockSet,
+        nowMs: Long,
+        calendar: Calendar
+    ): Long? {
+        if (!blockSet.isScheduleActive(calendar)) {
+            return nowMs
+        }
+
+        val probe = (calendar.clone() as Calendar).apply {
+            time = Date(nowMs)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val maxMinutesToCheck = 7 * 24 * 60 + 1
+
+        repeat(maxMinutesToCheck) {
+            probe.add(Calendar.MINUTE, 1)
+            if (!blockSet.isScheduleActive(probe)) {
+                return probe.timeInMillis
+            }
+        }
+
+        return null
     }
 
     private fun putBoolean(key: String, value: Boolean) {

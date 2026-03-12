@@ -321,7 +321,7 @@ class BlockSetActivity : AppCompatActivity() {
         val quotaText = binding.editQuota.text?.toString()?.trim().orEmpty()
         val normalizedQuotaText = quotaText.replace(',', '.')
         val quota = normalizedQuotaText.toDoubleOrNull()
-        if (quota == null || quota <= 0) {
+        if (quota == null || quota < 0) {
             Toast.makeText(this, getString(R.string.enter_quota_minutes), Toast.LENGTH_SHORT).show()
             return
         }

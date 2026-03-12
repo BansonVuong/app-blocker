@@ -52,6 +52,31 @@ class BlockedActivityTest {
         assertEquals(app.getString(R.string.quota_exceeded), title.text.toString())
     }
 
+    @Test
+    fun showsNeverForZeroQuotaWithoutSchedule() {
+        val storage = Storage(app)
+        val blockSet = BlockSet(
+            name = "Focus",
+            quotaMinutes = 0.0,
+            windowMinutes = 60
+        )
+        storage.saveBlockSets(listOf(blockSet))
+
+        val activity = Robolectric.buildActivity(
+            BlockedActivity::class.java,
+            blockedIntent(mode = BlockedActivity.MODE_QUOTA).apply {
+                putExtra(BlockedActivity.EXTRA_BLOCK_SET_NAME, blockSet.name)
+                putExtra(BlockedActivity.EXTRA_BLOCK_SET_ID, blockSet.id)
+            }
+        ).setup().get()
+
+        val unblockTime = activity.findViewById<TextView>(R.id.textUnblockTime)
+        assertEquals(
+            app.getString(R.string.unblocked_at, app.getString(R.string.never)),
+            unblockTime.text.toString()
+        )
+    }
+
     private fun blockedIntent(mode: Int, interventionMode: Int = BlockSet.INTERVENTION_NONE): Intent {
         return Intent(app, BlockedActivity::class.java).apply {
             putExtra(BlockedActivity.EXTRA_BLOCK_SET_NAME, "Focus")
