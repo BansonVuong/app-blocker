@@ -12,6 +12,7 @@ import com.appblocker.databinding.ActivityBlockedBinding
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -44,6 +45,32 @@ class BlockedActivity : AppCompatActivity() {
         const val MODE_QUOTA = 0
         const val MODE_INTERVENTION = 1
         private const val UPDATE_INTERVAL_MS = 30_000L
+
+        internal fun formatUnblockAt(
+            unblockAtMillis: Long,
+            nowMillis: Long = System.currentTimeMillis(),
+            locale: Locale = Locale.getDefault()
+        ): String {
+            val date = Date(unblockAtMillis)
+            val timeFormatter = SimpleDateFormat("h:mm a", locale)
+            val nowCalendar = Calendar.getInstance().apply { timeInMillis = nowMillis }
+            val unblockCalendar = Calendar.getInstance().apply { timeInMillis = unblockAtMillis }
+            val isSameDay = nowCalendar.get(Calendar.ERA) == unblockCalendar.get(Calendar.ERA) &&
+                nowCalendar.get(Calendar.YEAR) == unblockCalendar.get(Calendar.YEAR) &&
+                nowCalendar.get(Calendar.DAY_OF_YEAR) == unblockCalendar.get(Calendar.DAY_OF_YEAR)
+
+            if (isSameDay) {
+                return timeFormatter.format(date)
+            }
+
+            val includesYear = nowCalendar.get(Calendar.YEAR) != unblockCalendar.get(Calendar.YEAR)
+            val datePattern = if (includesYear) {
+                "EEE, MMM d, yyyy 'at' h:mm a"
+            } else {
+                "EEE, MMM d 'at' h:mm a"
+            }
+            return SimpleDateFormat(datePattern, locale).format(date)
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -268,11 +295,11 @@ class BlockedActivity : AppCompatActivity() {
     private fun updateUnblockTime(blockSetId: String?) {
         if (storage.isLockdownActive()) {
             val unblockAtMillis = storage.getLockdownEndMillis() ?: return
-            val date = Date(unblockAtMillis)
-            val formatter = SimpleDateFormat("h:mm a", Locale.getDefault())
-            val time = formatter.format(date)
             binding.textUnblockTime.visibility = View.VISIBLE
-            binding.textUnblockTime.text = getString(R.string.unblocked_at, time)
+            binding.textUnblockTime.text = getString(
+                R.string.unblocked_at,
+                formatUnblockAt(unblockAtMillis)
+            )
             return
         }
 
@@ -291,10 +318,10 @@ class BlockedActivity : AppCompatActivity() {
             return
         }
 
-        val date = Date(unblockAtMillis)
-        val formatter = SimpleDateFormat("h:mm a", Locale.getDefault())
-        val time = formatter.format(date)
-        binding.textUnblockTime.text = getString(R.string.unblocked_at, time)
+        binding.textUnblockTime.text = getString(
+            R.string.unblocked_at,
+            formatUnblockAt(unblockAtMillis)
+        )
     }
 
     private fun resolveQuotaBlockingBlockSet(fallbackBlockSetId: String?): BlockSet? {

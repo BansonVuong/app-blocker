@@ -13,6 +13,9 @@ import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.util.Calendar
+import java.util.Locale
+import java.util.TimeZone
 
 @RunWith(RobolectricTestRunner::class)
 @Config(application = App::class)
@@ -109,6 +112,34 @@ class BlockedActivityTest {
             "\"${blockingBlockSet.name}\"",
             activity.findViewById<TextView>(R.id.textBlockSetName).text.toString()
         )
+    }
+
+    @Test
+    fun formatsFutureDayUnblockTimeWithDate() {
+        val originalTimeZone = TimeZone.getDefault()
+        val testTimeZone = TimeZone.getTimeZone("America/Toronto")
+        TimeZone.setDefault(testTimeZone)
+        try {
+            val now = Calendar.getInstance(testTimeZone, Locale.US).apply {
+                set(2026, Calendar.MARCH, 12, 9, 0, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            val nextTuesdayMidnight = Calendar.getInstance(testTimeZone, Locale.US).apply {
+                set(2026, Calendar.MARCH, 17, 0, 0, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+
+            assertEquals(
+                "Tue, Mar 17 at 12:00 AM",
+                BlockedActivity.formatUnblockAt(
+                    unblockAtMillis = nextTuesdayMidnight.timeInMillis,
+                    nowMillis = now.timeInMillis,
+                    locale = Locale.US
+                )
+            )
+        } finally {
+            TimeZone.setDefault(originalTimeZone)
+        }
     }
 
     private fun blockedIntent(mode: Int, interventionMode: Int = BlockSet.INTERVENTION_NONE): Intent {
