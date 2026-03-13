@@ -33,10 +33,6 @@ class AppBlockerService : AccessibilityService() {
     private var lastBlockedEventTimeMs: Long = 0
     private var lastBlockedScreenKey: String? = null
     private var lastBlockedScreenLaunchMs: Long = 0
-    private lateinit var snapchatDetector: SnapchatDetector
-    private lateinit var instagramDetector: InstagramDetector
-    private lateinit var youtubeDetector: YouTubeDetector
-    private lateinit var browserIncognitoDetector: BrowserIncognitoDetector
     private var lastForegroundPackage: String? = null
     private val gson = Gson()
 
@@ -52,11 +48,6 @@ class AppBlockerService : AccessibilityService() {
         private const val PENDING_STOP_DELAY_MS = 1000L
         private const val RECENT_BLOCKED_EVENT_THRESHOLD_MS = 1500L
         private const val OVERLAY_MARGIN_DP = 12
-        private const val SNAPCHAT_DETECTION_INTERVAL_MS = 400L
-        private const val SNAPCHAT_HEADER_MAX_Y_DP = 260
-        private const val INSTAGRAM_DETECTION_INTERVAL_MS = 400L
-        private const val YOUTUBE_DETECTION_INTERVAL_MS = 400L
-        private const val BROWSER_DETECTION_INTERVAL_MS = 400L
         private const val LOG_TAG = "AppBlockerOverlay"
         private const val BLOCKED_SCREEN_DEDUP_WINDOW_MS = 1_500L
     }
@@ -67,21 +58,9 @@ class AppBlockerService : AccessibilityService() {
         eventFilter = AppBlockerEventFilter()
         sessionTracker = LocalSessionTracker(storage)
 
-        snapchatDetector = SnapchatDetector(
-            detectionIntervalMs = SNAPCHAT_DETECTION_INTERVAL_MS,
-            headerMaxYProvider = { dpToPx(SNAPCHAT_HEADER_MAX_Y_DP) }
-        )
-        instagramDetector = InstagramDetector(INSTAGRAM_DETECTION_INTERVAL_MS)
-        youtubeDetector = YouTubeDetector(YOUTUBE_DETECTION_INTERVAL_MS)
-        browserIncognitoDetector = BrowserIncognitoDetector(BROWSER_DETECTION_INTERVAL_MS)
-
         packageResolver = AppBlockerPackageResolver(
             storage = storage,
-            rootProvider = { rootInActiveWindow },
-            snapchatDetector = snapchatDetector,
-            instagramDetector = instagramDetector,
-            youtubeDetector = youtubeDetector,
-            browserIncognitoDetector = browserIncognitoDetector
+            rootProvider = { rootInActiveWindow }
         )
 
         screenStateTracker = AppBlockerScreenStateTracker(

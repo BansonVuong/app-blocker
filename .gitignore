@@ -34,3 +34,5 @@ captures/
 .claude/
 tmpclaude-*
 /docs
+
+.vscode/

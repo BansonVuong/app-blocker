@@ -187,7 +187,8 @@ class Storage(context: Context) {
     }
 
     fun saveBlockSets(blockSets: List<BlockSet>) {
-        val json = gson.toJson(blockSets)
+        val sanitizedBlockSets = sanitizeBlockSets(blockSets)
+        val json = gson.toJson(sanitizedBlockSets)
         putString(KEY_BLOCK_SETS, json)
     }
 
@@ -204,9 +205,26 @@ class Storage(context: Context) {
                     if (bs.interventionCodeLength <= 0) { bs.interventionCodeLength = 32; needsSave = true }
                 }
             }
+            val removedApps = bs.apps.removeAll { it in AppTargets.removedTrackingPackages }
+            if (removedApps) {
+                needsSave = true
+            }
         }
         if (needsSave) saveBlockSets(blockSets)
         return blockSets
+    }
+
+    private fun sanitizeBlockSets(blockSets: List<BlockSet>): List<BlockSet> {
+        return blockSets.map { blockSet ->
+            val sanitizedApps = blockSet.apps
+                .filterNot { it in AppTargets.removedTrackingPackages }
+                .toMutableList()
+            if (sanitizedApps == blockSet.apps) {
+                blockSet
+            } else {
+                blockSet.copy(apps = sanitizedApps)
+            }
+        }
     }
 
     fun getBlockSetForApp(packageName: String): BlockSet? {
