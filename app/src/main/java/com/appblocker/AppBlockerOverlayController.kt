@@ -20,12 +20,10 @@ class AppBlockerOverlayController(
     private val currentTrackedPackage: () -> String?,
     private val dpToPx: (Int) -> Int,
     private val formatRemainingTime: (Int) -> String,
-    private val logDebug: (String, String) -> Unit,
     private val overlayMarginDp: Int
 ) {
     private var overlayView: TextView? = null
     private var overlayLayoutParams: WindowManager.LayoutParams? = null
-    private var debugOverlayView: TextView? = null
 
     fun updateOverlay(blockSet: BlockSet?) {
         if (!Settings.canDrawOverlays(context)) {
@@ -36,10 +34,8 @@ class AppBlockerOverlayController(
             removeOverlay()
             return
         }
-        logDebug("overlay", "update blockSet=${blockSet?.name} view=${overlayView != null}")
 
         if (blockSet == null) {
-            logDebug("overlay", "remove (no blockSet)")
             removeViewSafely(overlayView)
             overlayView = null
             overlayLayoutParams = null
@@ -64,43 +60,14 @@ class AppBlockerOverlayController(
         }
 
         val view = ensureOverlayView()
-        logDebug("overlay", "local update blockSet=${blockSet.name} remaining=$remainingSeconds")
         view.text = formatRemainingTime(remainingSeconds)
         view.setTextColor(ContextCompat.getColor(context, R.color.white))
     }
 
-    fun updateDebugOverlay(packageName: String, isBlocked: Boolean, tracking: String?) {
-        if (!Settings.canDrawOverlays(context)) {
-            removeDebugOverlay()
-            return
-        }
-        if (isScreenOff()) {
-            removeDebugOverlay()
-            return
-        }
-
-        val shortName = packageName.substringAfterLast(".")
-        val status = if (isBlocked) "BLOCKED" else "not blocked"
-        val trackingInfo = tracking?.substringAfterLast(".") ?: "none"
-        val text = "$shortName ($status)\ntracking: $trackingInfo"
-
-        val view = ensureDebugOverlayView()
-        logDebug("debug", "update $text")
-        view.text = text
-    }
-
     fun removeOverlay() {
-        logDebug("overlay", "remove")
         removeViewSafely(overlayView)
         overlayView = null
         overlayLayoutParams = null
-        removeDebugOverlay()
-    }
-
-    fun removeDebugOverlay() {
-        logDebug("debug", "remove")
-        removeViewSafely(debugOverlayView)
-        debugOverlayView = null
     }
 
     fun applyStoredOverlayPosition(packageName: String) {
@@ -177,63 +144,6 @@ class AppBlockerOverlayController(
         return view
     }
 
-    @SuppressLint("ClickableViewAccessibility")
-    private fun ensureDebugOverlayView(): TextView {
-        if (debugOverlayView != null) return debugOverlayView!!
-        clearStaleDebugOverlayReference()
-
-        val view = TextView(context)
-        view.setTextColor(Color.YELLOW)
-        view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 11f)
-        view.setPadding(dpToPx(8), dpToPx(4), dpToPx(8), dpToPx(4))
-        view.background = GradientDrawable().apply {
-            cornerRadius = dpToPx(8).toFloat()
-            setColor(Color.argb(200, 50, 50, 50))
-        }
-
-        val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-            android.graphics.PixelFormat.TRANSLUCENT
-        )
-        params.gravity = Gravity.TOP or Gravity.START
-        params.x = dpToPx(overlayMarginDp)
-        params.y = dpToPx(overlayMarginDp + 40)
-
-        var initialX = 0
-        var initialY = 0
-        var initialTouchX = 0f
-        var initialTouchY = 0f
-
-        view.setOnTouchListener { _, event ->
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    initialX = params.x
-                    initialY = params.y
-                    initialTouchX = event.rawX
-                    initialTouchY = event.rawY
-                    true
-                }
-
-                MotionEvent.ACTION_MOVE -> {
-                    params.x = initialX + (event.rawX - initialTouchX).toInt()
-                    params.y = initialY + (event.rawY - initialTouchY).toInt()
-                    windowManager.updateViewLayout(view, params)
-                    true
-                }
-
-                else -> false
-            }
-        }
-
-        windowManager.addView(view, params)
-        debugOverlayView = view
-        return view
-    }
-
     private fun persistOverlayPosition(x: Int, y: Int) {
         val packageName = currentTrackedPackage() ?: return
         storage.setOverlayPosition(packageName, x, y)
@@ -257,10 +167,5 @@ class AppBlockerOverlayController(
         removeViewSafely(overlayView)
         overlayView = null
         overlayLayoutParams = null
-    }
-
-    private fun clearStaleDebugOverlayReference() {
-        removeViewSafely(debugOverlayView)
-        debugOverlayView = null
     }
 }

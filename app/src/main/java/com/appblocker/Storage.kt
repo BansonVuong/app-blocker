@@ -91,8 +91,6 @@ class Storage(context: Context) {
 
     companion object {
         private const val KEY_BLOCK_SETS = "block_sets"
-        private const val KEY_DEBUG_OVERLAY_ENABLED = "debug_overlay_enabled"
-        private const val KEY_DEBUG_LOG_CAPTURE_ENABLED = "debug_log_capture_enabled"
         private const val KEY_OVERLAY_X_PREFIX = "overlay_x_"
         private const val KEY_OVERLAY_Y_PREFIX = "overlay_y_"
         private const val KEY_VIRTUAL_SESSIONS_PREFIX = "virtual_sessions_"
@@ -149,42 +147,6 @@ class Storage(context: Context) {
         randomCodeLengthKey = KEY_SETTINGS_RANDOM_CODE_LENGTH,
         defaultMode = OVERRIDE_AUTH_NONE
     )
-
-    // ===== Debug-only prefs (easy to remove) =====
-    fun isDebugOverlayEnabled(): Boolean {
-        return prefs.getBoolean(KEY_DEBUG_OVERLAY_ENABLED, false)
-    }
-
-    fun setDebugOverlayEnabled(enabled: Boolean) {
-        putBoolean(KEY_DEBUG_OVERLAY_ENABLED, enabled)
-    }
-
-    fun isDebugLogCaptureEnabled(): Boolean {
-        return prefs.getBoolean(KEY_DEBUG_LOG_CAPTURE_ENABLED, false)
-    }
-
-    fun setDebugLogCaptureEnabled(enabled: Boolean) {
-        putBoolean(KEY_DEBUG_LOG_CAPTURE_ENABLED, enabled)
-    }
-    // ===== End debug-only prefs =====
-
-    fun registerDebugOverlayEnabledListener(
-        listener: (Boolean) -> Unit
-    ): SharedPreferences.OnSharedPreferenceChangeListener {
-        val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key == KEY_DEBUG_OVERLAY_ENABLED) {
-                listener(isDebugOverlayEnabled())
-            }
-        }
-        prefs.registerOnSharedPreferenceChangeListener(prefListener)
-        return prefListener
-    }
-
-    fun unregisterDebugOverlayEnabledListener(
-        prefListener: SharedPreferences.OnSharedPreferenceChangeListener
-    ) {
-        prefs.unregisterOnSharedPreferenceChangeListener(prefListener)
-    }
 
     fun saveBlockSets(blockSets: List<BlockSet>) {
         val sanitizedBlockSets = sanitizeBlockSets(blockSets)

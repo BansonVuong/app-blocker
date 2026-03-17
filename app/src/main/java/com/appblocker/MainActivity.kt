@@ -138,56 +138,6 @@ class MainActivity : AppCompatActivity() {
             }
             showLockdownHoursDialog()
         }
-
-        setupDebugTools()
-    }
-
-    // ===== Debug-only UI (easy to remove) =====
-    private fun setupDebugTools() {
-        if (!BuildConfig.DEBUG_TOOLS_ENABLED) {
-            binding.switchDebugOverlay.visibility = View.GONE
-            binding.switchDebugLogCapture.visibility = View.GONE
-            binding.buttonExportLogs.visibility = View.GONE
-            binding.buttonShareLogs.visibility = View.GONE
-            return
-        }
-        binding.switchDebugOverlay.isChecked = storage.isDebugOverlayEnabled()
-        binding.switchDebugOverlay.setOnCheckedChangeListener { _, isChecked ->
-            storage.setDebugOverlayEnabled(isChecked)
-        }
-
-        binding.switchDebugLogCapture.isChecked = storage.isDebugLogCaptureEnabled()
-        binding.switchDebugLogCapture.setOnCheckedChangeListener { _, isChecked ->
-            storage.setDebugLogCaptureEnabled(isChecked)
-        }
-
-        binding.buttonExportLogs.setOnClickListener {
-            val result = DebugLogStore.export(this)
-            if (result == null) {
-                Toast.makeText(this, getString(R.string.export_logs_missing), Toast.LENGTH_LONG).show()
-                return@setOnClickListener
-            }
-            val message = if (result.path != null) {
-                getString(R.string.export_logs_saved_app_dir, result.path)
-            } else {
-                getString(R.string.export_logs_saved_downloads, result.displayName)
-            }
-            Toast.makeText(this, message, Toast.LENGTH_LONG).show()
-        }
-
-        binding.buttonShareLogs.setOnClickListener {
-            val uri = DebugLogStore.exportForShare(this)
-            if (uri == null) {
-                Toast.makeText(this, getString(R.string.export_logs_missing), Toast.LENGTH_LONG).show()
-                return@setOnClickListener
-            }
-            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                type = "text/plain"
-                putExtra(Intent.EXTRA_STREAM, uri)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            startActivity(Intent.createChooser(shareIntent, getString(R.string.share_debug_logs)))
-        }
     }
 
     private fun openBlockSetEditor(blockSet: BlockSet?) {

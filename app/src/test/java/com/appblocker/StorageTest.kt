@@ -91,35 +91,6 @@ class StorageTest {
     }
 
     @Test
-    fun debugOverlayFlagPersists() {
-        val storage = Storage(context)
-
-        assertFalse(storage.isDebugOverlayEnabled())
-        storage.setDebugOverlayEnabled(true)
-        assertTrue(storage.isDebugOverlayEnabled())
-    }
-
-    @Test
-    fun debugOverlayListenerNotifiesAndStopsAfterUnregister() {
-        val storage = Storage(context)
-        val observed = mutableListOf<Boolean>()
-
-        val listener = storage.registerDebugOverlayEnabledListener { enabled ->
-            observed.add(enabled)
-        }
-
-        storage.setDebugOverlayEnabled(true)
-        storage.setDebugOverlayEnabled(false)
-
-        assertEquals(listOf(true, false), observed)
-
-        storage.unregisterDebugOverlayEnabledListener(listener)
-        storage.setDebugOverlayEnabled(true)
-
-        assertEquals(listOf(true, false), observed)
-    }
-
-    @Test
     fun overlayPositionPersistsPerPackage() {
         val storage = Storage(context)
         assertNull(storage.getOverlayPosition("com.example.app"))

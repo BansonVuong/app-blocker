@@ -2,17 +2,15 @@ package com.appblocker
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
-import android.content.SharedPreferences
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import com.google.gson.Gson
 
 /**
  * Accessibility service that monitors foreground app changes and enforces block sets.
- * Renders overlays for timers/debugging and tracks usage windows in near real time.
+ * Renders overlays for timers and tracks usage windows in near real time.
  */
 class AppBlockerService : AccessibilityService() {
 
@@ -29,7 +27,6 @@ class AppBlockerService : AccessibilityService() {
     private lateinit var eventFilter: AppBlockerEventFilter
     private lateinit var packageResolver: AppBlockerPackageResolver
     private lateinit var sessionTracker: LocalSessionTracker
-    private var debugOverlayPrefListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
     private var lastBlockedEventTimeMs: Long = 0
     private var lastBlockedScreenKey: String? = null
     private var lastBlockedScreenLaunchMs: Long = 0
@@ -78,21 +75,8 @@ class AppBlockerService : AccessibilityService() {
             currentTrackedPackage = { currentTrackedPackage },
             dpToPx = { dpToPx(it) },
             formatRemainingTime = { formatRemainingTime(it) },
-            logDebug = { tag, message -> logDebug(tag, message) },
             overlayMarginDp = OVERLAY_MARGIN_DP
         )
-
-        debugOverlayPrefListener = storage.registerDebugOverlayEnabledListener { enabled ->
-            if (!enabled) {
-                overlayController.removeDebugOverlay()
-                updateOverlayWithLocalTracking(currentBlockSet)
-                return@registerDebugOverlayEnabledListener
-            }
-            val trackedPackage = currentTrackedPackage ?: return@registerDebugOverlayEnabledListener
-            val policy = storage.resolveEffectiveAppPolicy(trackedPackage)
-            overlayController.updateDebugOverlay(trackedPackage, policy != null, currentTrackedPackage)
-            updateOverlay(currentBlockSet)
-        }
     }
 
     override fun onServiceConnected() {
@@ -106,8 +90,6 @@ class AppBlockerService : AccessibilityService() {
         isRunning = false
         stopTracking()
         overlayController.removeOverlay()
-        debugOverlayPrefListener?.let { storage.unregisterDebugOverlayEnabledListener(it) }
-        debugOverlayPrefListener = null
         screenStateTracker.unregister()
     }
 
@@ -141,12 +123,7 @@ class AppBlockerService : AccessibilityService() {
             lastForegroundPackage = packageName
         }
 
-        logDebug("event", buildEventLogMessage(packageName, className))
-
         val policy = storage.resolveEffectiveAppPolicy(effectivePackageName, nowMs)
-        val isBlocked = policy != null
-        logDebug("event", "isBlocked=$isBlocked debug=${storage.isDebugOverlayEnabled()}")
-        handleDebugOverlay(effectivePackageName, isBlocked)
 
         if (packageName == "com.android.systemui") {
             return
@@ -178,7 +155,6 @@ class AppBlockerService : AccessibilityService() {
         cancelPendingStop()
 
         if (storage.isLockdownActive(nowMs)) {
-            logDebug("blocked", "lockdown active for ${blockSet.name}")
             launchBlockedScreen(blockSet.name, blockSet.id, packageName)
             stopTracking()
             return
@@ -186,14 +162,12 @@ class AppBlockerService : AccessibilityService() {
 
         if (policy.quotaBlocked) {
             val quotaBlockingBlockSet = policy.quotaBlockingBlockSet ?: blockSet
-            logDebug("blocked", "quota exceeded for ${quotaBlockingBlockSet.name}")
             launchBlockedScreen(quotaBlockingBlockSet.name, quotaBlockingBlockSet.id, packageName)
             stopTracking()
             return
         }
 
         if (!isInterventionAuthorized(packageName, policy)) {
-            logDebug("blocked", "intervention required for ${blockSet.name}")
             launchBlockedScreen(
                 blockSetName = blockSet.name,
                 blockSetId = blockSet.id,
@@ -208,7 +182,6 @@ class AppBlockerService : AccessibilityService() {
         }
 
         if (currentTrackedPackage != packageName) {
-            logDebug("track", "switch to blocked $packageName")
             stopTracking()
             startTracking(packageName, blockSet, policy.effectiveDisplayRemainingSeconds)
         }
@@ -221,18 +194,14 @@ class AppBlockerService : AccessibilityService() {
         val isAppBlockerActivity = className?.startsWith(this.packageName) == true
 
         if (currentTrackedPackage != null && !isAppBlockerActivity) {
-            logDebug("track", "ignore appblocker non-activity event during blocked app")
             return
         }
         if (recentlyInBlockedApp && !isAppBlockerActivity) {
-            logDebug("track", "ignore appblocker event during blocked app")
             return
         }
         if (currentTrackedPackage != null) {
-            logDebug("track", "schedule stop due to appblocker event while tracking")
             scheduleStopTracking()
         } else {
-            logDebug("track", "stop due to appblocker event")
             stopTracking()
         }
     }
@@ -240,17 +209,12 @@ class AppBlockerService : AccessibilityService() {
     private fun handleUnblockedAppSwitch(packageName: String) {
         val trackedPackage = currentTrackedPackage
         if (isSameAppFamily(trackedPackage, packageName)) {
-            logDebug(
-                "track",
-                "ignore switch within same app family: $packageName (tracked=$trackedPackage)"
-            )
             cancelPendingStop()
             return
         }
 
         val isLikelyOverlay = isLikelyOverlayPackage(packageName)
         if (!isLikelyOverlay) {
-            logDebug("track", "schedule stop due to $packageName (likelyOverlay=$isLikelyOverlay)")
             scheduleStopTracking()
         }
     }
@@ -259,7 +223,6 @@ class AppBlockerService : AccessibilityService() {
         cancelPendingStop()
         currentTrackedPackage = packageName
         currentBlockSet = blockSet
-        logDebug("track", "start $packageName blockSet=${blockSet.name}")
 
         applySessionState(
             sessionTracker.start(
@@ -349,7 +312,6 @@ class AppBlockerService : AccessibilityService() {
         currentTrackedPackage = null
         currentBlockSet = null
         applySessionState(LocalSessionTracker.State.EMPTY)
-        logDebug("track", "stop")
         updateOverlay(null)
     }
 
@@ -360,18 +322,13 @@ class AppBlockerService : AccessibilityService() {
         }
         if (pendingStopRunnable != null) return
 
-        logDebug("track", "schedule stop in 1s")
         pendingStopRunnable = Runnable {
-            logDebug("track", "stop runnable fired")
             stopTracking()
         }
         handler.postDelayed(pendingStopRunnable!!, PENDING_STOP_DELAY_MS)
     }
 
     private fun cancelPendingStop() {
-        if (pendingStopRunnable != null) {
-            logDebug("track", "cancel pending stop")
-        }
         pendingStopRunnable?.let { handler.removeCallbacks(it) }
         pendingStopRunnable = null
     }
@@ -397,7 +354,6 @@ class AppBlockerService : AccessibilityService() {
         if (lastBlockedScreenKey == launchKey &&
             (nowMs - lastBlockedScreenLaunchMs) < BLOCKED_SCREEN_DEDUP_WINDOW_MS
         ) {
-            logDebug("blocked", "skip duplicate blocked screen launch for $launchKey")
             return
         }
         lastBlockedScreenKey = launchKey
@@ -443,7 +399,6 @@ class AppBlockerService : AccessibilityService() {
         effectiveDisplayRemainingSeconds: Int? = null
     ) {
         if (blockSet == null) {
-            logDebug("overlay", "local update with null blockSet")
             updateOverlay(null)
             return
         }
@@ -467,28 +422,6 @@ class AppBlockerService : AccessibilityService() {
     private fun dpToPx(dp: Int): Int {
         val density = resources.displayMetrics.density
         return (dp * density).toInt()
-    }
-
-    private fun logDebug(tag: String, message: String) {
-        if (!BuildConfig.DEBUG_TOOLS_ENABLED) return
-        if (!storage.isDebugOverlayEnabled() && !storage.isDebugLogCaptureEnabled()) return
-        Log.d(LOG_TAG, "[$tag] $message")
-        DebugLogStore.append(applicationContext, tag, message)
-    }
-
-    private fun handleDebugOverlay(packageName: String, isBlocked: Boolean) {
-        if (!BuildConfig.DEBUG_TOOLS_ENABLED) return
-        if (storage.isDebugOverlayEnabled()) {
-            overlayController.updateDebugOverlay(packageName, isBlocked, currentTrackedPackage)
-        } else {
-            overlayController.removeDebugOverlay()
-        }
-    }
-
-    private fun buildEventLogMessage(packageName: String, className: String?): String {
-        val safeClassName = className ?: "null"
-        return "pkg=$packageName class=$safeClassName tracked=$currentTrackedPackage " +
-            "pendingStop=${pendingStopRunnable != null}"
     }
 
     private fun shouldHandleAccessibilityEvent(eventType: Int): Boolean {
