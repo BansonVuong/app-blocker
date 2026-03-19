@@ -22,6 +22,9 @@ class AppBlockerService : AccessibilityService() {
     private var pendingStopRunnable: Runnable? = null
     private var interventionAuthorizedPackage: String? = null
     private var interventionAuthorizedSignature: String? = null
+    private var interventionGracePackage: String? = null
+    private var interventionGraceSignature: String? = null
+    private var interventionGraceUntilMs: Long = 0
     private lateinit var overlayController: AppBlockerOverlayController
     private lateinit var screenStateTracker: AppBlockerScreenStateTracker
     private lateinit var eventFilter: AppBlockerEventFilter
@@ -47,6 +50,7 @@ class AppBlockerService : AccessibilityService() {
         private const val OVERLAY_MARGIN_DP = 12
         private const val LOG_TAG = "AppBlockerOverlay"
         private const val BLOCKED_SCREEN_DEDUP_WINDOW_MS = 1_500L
+        private const val INTERVENTION_GRACE_PERIOD_MS = 5_000L
     }
 
     override fun onCreate() {
@@ -107,6 +111,7 @@ class AppBlockerService : AccessibilityService() {
             eventType = event.eventType,
             nowMs = nowMs
         )
+        val resolvedFromWrapperPackage = effectivePackageName != packageName
 
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
             !isLikelyOverlayPackage(packageName)
@@ -125,11 +130,13 @@ class AppBlockerService : AccessibilityService() {
 
         val policy = storage.resolveEffectiveAppPolicy(effectivePackageName, nowMs)
 
-        if (packageName == "com.android.systemui") {
+        if (packageName == "com.android.systemui" && !resolvedFromWrapperPackage) {
             return
         }
 
-        if (packageName == "com.android.launcher" || packageName.contains("launcher")) {
+        if ((packageName == "com.android.launcher" || packageName.contains("launcher")) &&
+            !resolvedFromWrapperPackage
+        ) {
             interventionAuthorizedPackage = null
             interventionAuthorizedSignature = null
             stopTracking()
@@ -167,7 +174,7 @@ class AppBlockerService : AccessibilityService() {
             return
         }
 
-        if (!isInterventionAuthorized(packageName, policy)) {
+        if (!isInterventionAuthorized(packageName, policy, nowMs)) {
             launchBlockedScreen(
                 blockSetName = blockSet.name,
                 blockSetId = blockSet.id,
@@ -177,6 +184,7 @@ class AppBlockerService : AccessibilityService() {
                 interventionCodeLength = blockSet.interventionCodeLength,
                 interventionStepsJson = gson.toJson(policy.interventionChallenges)
             )
+            grantInterventionGrace(packageName, policy, nowMs)
             stopTracking()
             return
         }
@@ -270,7 +278,7 @@ class AppBlockerService : AccessibilityService() {
                             stopTracking()
                             return
                         }
-                        if (!isInterventionAuthorized(trackedPackage, policy)) {
+                        if (!isInterventionAuthorized(trackedPackage, policy, nowMs)) {
                             launchBlockedScreen(
                                 blockSetName = updatedBlockSet.name,
                                 blockSetId = updatedBlockSet.id,
@@ -280,6 +288,7 @@ class AppBlockerService : AccessibilityService() {
                                 interventionCodeLength = updatedBlockSet.interventionCodeLength,
                                 interventionStepsJson = gson.toJson(policy.interventionChallenges)
                             )
+                            grantInterventionGrace(trackedPackage, policy, nowMs)
                             stopTracking()
                             return
                         }
@@ -373,7 +382,11 @@ class AppBlockerService : AccessibilityService() {
         startActivity(intent)
     }
 
-    private fun isInterventionAuthorized(packageName: String, policy: EffectiveAppPolicy): Boolean {
+    private fun isInterventionAuthorized(
+        packageName: String,
+        policy: EffectiveAppPolicy,
+        nowMs: Long
+    ): Boolean {
         if (policy.interventionChallenges.isEmpty()) {
             return true
         }
@@ -382,12 +395,35 @@ class AppBlockerService : AccessibilityService() {
         ) {
             return true
         }
+        if (interventionGracePackage == packageName &&
+            interventionGraceSignature == policy.interventionSignature &&
+            nowMs <= interventionGraceUntilMs
+        ) {
+            return true
+        }
         if (storage.consumeInterventionBypass(packageName)) {
             interventionAuthorizedPackage = packageName
             interventionAuthorizedSignature = policy.interventionSignature
+            clearInterventionGrace()
             return true
         }
         return false
+    }
+
+    private fun grantInterventionGrace(
+        packageName: String,
+        policy: EffectiveAppPolicy,
+        nowMs: Long
+    ) {
+        interventionGracePackage = packageName
+        interventionGraceSignature = policy.interventionSignature
+        interventionGraceUntilMs = nowMs + INTERVENTION_GRACE_PERIOD_MS
+    }
+
+    private fun clearInterventionGrace() {
+        interventionGracePackage = null
+        interventionGraceSignature = null
+        interventionGraceUntilMs = 0L
     }
 
     private fun updateOverlay(blockSet: BlockSet?) {

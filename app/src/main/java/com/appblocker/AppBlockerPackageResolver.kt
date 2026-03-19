@@ -9,6 +9,14 @@ class AppBlockerPackageResolver(
     private val inAppBrowserIgnorePackages = setOf(
         "com.google.chromeremotedesktop"
     )
+    private val rootFallbackPackages = setOf(
+        "com.android.systemui",
+        "com.android.permissioncontroller",
+        "com.google.android.permissioncontroller",
+        "com.miui.home",
+        "com.mi.android.globallauncher",
+        "com.miui.securitycenter"
+    )
 
     fun resolveEffectivePackageName(
         packageName: String,
@@ -18,6 +26,8 @@ class AppBlockerPackageResolver(
     ): String {
         val inAppBrowserPackage = resolveInAppBrowserPackage(packageName, className)
         if (inAppBrowserPackage != null) return inAppBrowserPackage
+
+        resolveRootPackage(packageName)?.let { return it }
 
         return packageName
     }
@@ -31,6 +41,25 @@ class AppBlockerPackageResolver(
 
     private fun isBrowserPackage(packageName: String): Boolean {
         return packageName in AppTargets.browserPackages
+    }
+
+    private fun resolveRootPackage(eventPackageName: String): String? {
+        if (!shouldUseRootPackageFallback(eventPackageName)) return null
+        val rootPackageName = rootProvider()?.packageName?.toString()?.trim().orEmpty()
+        if (rootPackageName.isEmpty()) return null
+        if (rootPackageName == eventPackageName) return null
+        if (rootPackageName == "com.appblocker") return null
+        if (shouldUseRootPackageFallback(rootPackageName)) return null
+        return rootPackageName
+    }
+
+    private fun shouldUseRootPackageFallback(packageName: String): Boolean {
+        if (packageName in AppTargets.browserPackages) return false
+        return packageName in rootFallbackPackages ||
+            packageName.startsWith("com.google.android.inputmethod") ||
+            packageName.contains("keyboard") ||
+            packageName.contains("overlay") ||
+            packageName.contains("launcher")
     }
 
     private fun getBrowserPackageForInAppBrowser(className: String): String? {

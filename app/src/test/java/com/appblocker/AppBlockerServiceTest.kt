@@ -55,6 +55,18 @@ class AppBlockerServiceTest {
         }
     }
 
+    private fun createEvent(
+        packageName: String,
+        eventType: Int = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
+        className: String? = null
+    ): AccessibilityEvent {
+        return AccessibilityEvent.obtain().apply {
+            this.eventType = eventType
+            this.packageName = packageName
+            this.className = className
+        }
+    }
+
     private fun getPrivateField(service: AppBlockerService, fieldName: String): Any? {
         val field = AppBlockerService::class.java.getDeclaredField(fieldName)
         field.isAccessible = true
@@ -124,6 +136,21 @@ class AppBlockerServiceTest {
 
     private fun addChild(parent: AccessibilityNodeInfo, child: AccessibilityNodeInfo) {
         Shadows.shadowOf(parent).addChild(child)
+    }
+
+    private fun installPackageResolverWithRoot(service: AppBlockerService, rootPackageName: String) {
+        setPrivateField(
+            service,
+            "packageResolver",
+            AppBlockerPackageResolver(
+                storage = storage,
+                rootProvider = {
+                    AccessibilityNodeInfo.obtain().apply {
+                        packageName = rootPackageName
+                    }
+                }
+            )
+        )
     }
 
     private fun drainStartedActivitiesCount(): Int {
@@ -208,6 +235,28 @@ class AppBlockerServiceTest {
     }
 
     @Test
+    fun launchesInterventionScreenWhenXiaomiLauncherWrapsBlockedApp() {
+        val blockSet = BlockSet(
+            name = "Focus",
+            apps = mutableListOf("com.instagram.android"),
+            quotaMinutes = 30.0,
+            windowMinutes = 60,
+            intervention = BlockSet.INTERVENTION_RANDOM
+        )
+        storage.saveBlockSets(listOf(blockSet))
+
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        installPackageResolverWithRoot(service, "com.instagram.android")
+
+        service.onAccessibilityEvent(createEvent(packageName = "com.miui.home"))
+
+        val intent = Shadows.shadowOf(app).nextStartedActivity
+        assertEquals(BlockedActivity::class.java.name, intent.component?.className)
+        assertEquals("com.instagram.android", intent.getStringExtra(BlockedActivity.EXTRA_RETURN_PACKAGE))
+        assertEquals(BlockedActivity.MODE_INTERVENTION, intent.getIntExtra(BlockedActivity.EXTRA_MODE, -1))
+    }
+
+    @Test
     fun doesNotRelaunchInterventionScreenForRapidDuplicateEvents() {
         val blockSet = BlockSet(
             name = "Focus",
@@ -227,7 +276,7 @@ class AppBlockerServiceTest {
     }
 
     @Test
-    fun relaunchesInterventionWhenForegroundReturnsViaContentChangedEvent() {
+    fun suppressesInterventionRetriggerWhenForegroundReturnsViaContentChangedEventWithinGrace() {
         val blockSet = BlockSet(
             name = "Focus",
             apps = mutableListOf("org.mozilla.fenix"),
@@ -246,7 +295,8 @@ class AppBlockerServiceTest {
 
         service.onAccessibilityEvent(createWindowContentChangedEvent("org.mozilla.fenix"))
 
-        assertEquals(1, drainStartedActivitiesCount())
+        assertEquals(0, drainStartedActivitiesCount())
+        assertEquals("org.mozilla.fenix", getPrivateField(service, "currentTrackedPackage"))
     }
 
     @Test
@@ -478,6 +528,51 @@ class AppBlockerServiceTest {
 
         service.onAccessibilityEvent(createWindowStateChangedEvent("com.example.blocked"))
         assertNull(Shadows.shadowOf(app).nextStartedActivity)
+    }
+
+    @Test
+    fun interventionGraceSuppressesRetriggerWithinFiveSeconds() {
+        val blockSet = BlockSet(
+            name = "Focus",
+            apps = mutableListOf("com.example.blocked"),
+            quotaMinutes = 30.0,
+            windowMinutes = 60,
+            intervention = BlockSet.INTERVENTION_RANDOM
+        )
+        storage.saveBlockSets(listOf(blockSet))
+
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        service.onAccessibilityEvent(createWindowStateChangedEvent("com.example.blocked"))
+        assertEquals(1, drainStartedActivitiesCount())
+
+        setPrivateField(service, "interventionGraceUntilMs", System.currentTimeMillis() + 4_000L)
+        service.onAccessibilityEvent(createWindowStateChangedEvent("com.example.blocked"))
+
+        assertEquals(0, drainStartedActivitiesCount())
+        assertEquals("com.example.blocked", getPrivateField(service, "currentTrackedPackage"))
+    }
+
+    @Test
+    fun interventionGraceExpiresAfterFiveSeconds() {
+        val blockSet = BlockSet(
+            name = "Focus",
+            apps = mutableListOf("com.example.blocked"),
+            quotaMinutes = 30.0,
+            windowMinutes = 60,
+            intervention = BlockSet.INTERVENTION_RANDOM
+        )
+        storage.saveBlockSets(listOf(blockSet))
+
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        service.onAccessibilityEvent(createWindowStateChangedEvent("com.example.blocked"))
+        assertEquals(1, drainStartedActivitiesCount())
+
+        setPrivateField(service, "interventionGraceUntilMs", System.currentTimeMillis() - 1L)
+        setPrivateField(service, "lastBlockedScreenLaunchMs", 0L)
+        service.onAccessibilityEvent(createWindowStateChangedEvent("com.example.blocked"))
+
+        assertEquals(1, drainStartedActivitiesCount())
+        assertNull(getPrivateField(service, "currentTrackedPackage"))
     }
 
     // ==================== Overlay Tracking Tests ====================
