@@ -145,12 +145,25 @@ class StorageTest {
         val storage = Storage(context)
         val nowMs = 1_000L
 
-        storage.setLockdownHours(2, nowMs)
+        storage.setLockdownHours(2.0, nowMs)
 
         assertTrue(storage.isLockdownActive(nowMs))
         assertEquals(2 * 60 * 60, storage.getLockdownRemainingSeconds(nowMs))
         assertFalse(storage.isLockdownActive(nowMs + 2 * 60 * 60 * 1000L + 1))
         assertEquals(0, storage.getLockdownRemainingSeconds(nowMs + 2 * 60 * 60 * 1000L + 1))
+    }
+
+    @Test
+    fun lockdownSupportsFractionalHours() {
+        val storage = Storage(context)
+        val nowMs = 1_000L
+
+        storage.setLockdownHours(0.5, nowMs)
+
+        assertTrue(storage.isLockdownActive(nowMs))
+        assertEquals(30 * 60, storage.getLockdownRemainingSeconds(nowMs))
+        assertFalse(storage.isLockdownActive(nowMs + 30 * 60 * 1000L + 1))
+        assertEquals(0, storage.getLockdownRemainingSeconds(nowMs + 30 * 60 * 1000L + 1))
     }
 
     @Test

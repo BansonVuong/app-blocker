@@ -15,7 +15,12 @@ class AppBlockerPackageResolver(
         "com.google.android.permissioncontroller",
         "com.miui.home",
         "com.mi.android.globallauncher",
-        "com.miui.securitycenter"
+        "com.miui.securitycenter",
+        "com.samsung.android.app.cocktailbarservice",
+        "com.samsung.android.app.taskedge",
+        "com.coloros.smartsidebar",
+        "com.oplus.sidebar",
+        "com.vivo.upslide"
     )
 
     fun resolveEffectivePackageName(
@@ -57,9 +62,17 @@ class AppBlockerPackageResolver(
         if (packageName in AppTargets.browserPackages) return false
         return packageName in rootFallbackPackages ||
             packageName.startsWith("com.google.android.inputmethod") ||
+            packageName.contains("securitycenter") ||
             packageName.contains("keyboard") ||
             packageName.contains("overlay") ||
-            packageName.contains("launcher")
+            packageName.contains("launcher") ||
+            packageName.contains("sidebar") ||
+            packageName.contains("cocktailbar") ||
+            packageName.contains("taskedge") ||
+            packageName.contains("edgepanel") ||
+            packageName.contains("floating") ||
+            packageName.contains("popup") ||
+            packageName.contains("freeform")
     }
 
     private fun getBrowserPackageForInAppBrowser(className: String): String? {

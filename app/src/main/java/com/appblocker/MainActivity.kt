@@ -294,7 +294,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showLockdownHoursDialog() {
-        showPositiveNumberDialog(
+        showPositiveDecimalDialog(
             titleResId = R.string.lockdown,
             hintResId = R.string.lockdown_hours,
             placeholderResId = R.string.lockdown_hours_hint,
@@ -304,6 +304,51 @@ class MainActivity : AppCompatActivity() {
             storage.setLockdownHours(hours)
             refreshData()
         }
+    }
+
+    private fun showPositiveDecimalDialog(
+        titleResId: Int,
+        hintResId: Int,
+        placeholderResId: Int,
+        positiveButtonResId: Int,
+        invalidValueToastResId: Int,
+        onValidValue: (Double) -> Unit
+    ) {
+        val padding = (16 * resources.displayMetrics.density).toInt()
+        val inputLayout = TextInputLayout(this).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            hint = getString(hintResId)
+            placeholderText = getString(placeholderResId)
+        }
+        val input = TextInputEditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+        }
+        inputLayout.addView(input)
+        val container = FrameLayout(this).apply {
+            setPadding(padding, padding, padding, 0)
+            addView(inputLayout)
+        }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(titleResId)
+            .setView(container)
+            .setPositiveButton(positiveButtonResId) { _, _ ->
+                val value = input.text
+                    ?.toString()
+                    ?.trim()
+                    ?.replace(',', '.')
+                    ?.toDoubleOrNull()
+                if (value == null || value <= 0.0) {
+                    Toast.makeText(this, getString(invalidValueToastResId), Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                onValidValue(value)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     private fun showPositiveNumberDialog(

@@ -442,10 +442,10 @@ class Storage(context: Context) {
     }
 
     fun setLockdownHours(
-        hours: Int,
+        hours: Double,
         nowMs: Long = System.currentTimeMillis()
     ) {
-        val durationMs = hours * 60L * 60L * 1000L
+        val durationMs = (hours * 60L * 60L * 1000L).toLong()
         val endMs = nowMs + durationMs
         putLong(KEY_LOCKDOWN_END, endMs)
     }

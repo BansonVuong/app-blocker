@@ -705,9 +705,55 @@ class AppBlockerServiceTest {
         service.onAccessibilityEvent(createWindowStateChangedEvent("com.samsung.android.app.cocktailbarservice"))
 
         val trackedPackage = getPrivateField(service, "currentTrackedPackage") as String?
+        val pendingStopRunnable = getPrivateField(service, "pendingStopRunnable")
 
         // Should still be tracking the blocked app
         assertEquals("com.instagram.android", trackedPackage)
+        assertNull(pendingStopRunnable)
+    }
+
+    @Test
+    fun maintainsTrackingWhenXiaomiSecurityCenterAppears() {
+        val blockSet = BlockSet(
+            name = "Social",
+            apps = mutableListOf("com.instagram.android"),
+            quotaMinutes = 30.0,
+            windowMinutes = 60
+        )
+        storage.saveBlockSets(listOf(blockSet))
+
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+
+        service.onAccessibilityEvent(createWindowStateChangedEvent("com.instagram.android"))
+        service.onAccessibilityEvent(createWindowStateChangedEvent("com.miui.securitycenter"))
+
+        val trackedPackage = getPrivateField(service, "currentTrackedPackage") as String?
+        val pendingStopRunnable = getPrivateField(service, "pendingStopRunnable")
+
+        assertEquals("com.instagram.android", trackedPackage)
+        assertNull(pendingStopRunnable)
+    }
+
+    @Test
+    fun maintainsTrackingWhenSidebarOverlayAppears() {
+        val blockSet = BlockSet(
+            name = "Social",
+            apps = mutableListOf("com.instagram.android"),
+            quotaMinutes = 30.0,
+            windowMinutes = 60
+        )
+        storage.saveBlockSets(listOf(blockSet))
+
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+
+        service.onAccessibilityEvent(createWindowStateChangedEvent("com.instagram.android"))
+        service.onAccessibilityEvent(createWindowStateChangedEvent("com.coloros.smartsidebar"))
+
+        val trackedPackage = getPrivateField(service, "currentTrackedPackage") as String?
+        val pendingStopRunnable = getPrivateField(service, "pendingStopRunnable")
+
+        assertEquals("com.instagram.android", trackedPackage)
+        assertNull(pendingStopRunnable)
     }
 
     @Test
