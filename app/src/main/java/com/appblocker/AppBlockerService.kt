@@ -234,7 +234,6 @@ class AppBlockerService : AccessibilityService() {
 
         applySessionState(
             sessionTracker.start(
-                packageName = packageName,
                 blockSet = blockSet,
                 nowMs = System.currentTimeMillis()
             )
@@ -254,7 +253,6 @@ class AppBlockerService : AccessibilityService() {
 
                         applySessionState(
                             sessionTracker.updateForWindowBoundary(
-                                packageName = trackedPackage,
                                 blockSet = updatedBlockSet,
                                 nowMs = nowMs,
                                 state = currentSessionState()

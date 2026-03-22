@@ -45,7 +45,6 @@ class AppBlockerEventFilter {
     }
 
     private fun canonicalAppPackage(packageName: String): String {
-        AppTargets.getParentPackage(packageName)?.let { return it }
         return packageName.substringBefore(":")
     }
 }

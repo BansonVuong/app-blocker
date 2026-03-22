@@ -156,17 +156,6 @@ class BlockedActivity : AppCompatActivity() {
     }
 
     private fun goHome() {
-        val returnPackage = intent.getStringExtra(EXTRA_RETURN_PACKAGE)
-        if (returnPackage != null && AppTargets.isVirtualPackage(returnPackage)) {
-            val parentPackage = AppTargets.getParentPackage(returnPackage)
-            val launchIntent = parentPackage?.let { packageManager.getLaunchIntentForPackage(it) }
-            if (launchIntent != null) {
-                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                startActivity(launchIntent)
-                finish()
-                return
-            }
-        }
         val homeIntent = Intent(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_HOME)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -281,12 +270,7 @@ class BlockedActivity : AppCompatActivity() {
 
     private fun launchReturnApp(): Boolean {
         val returnPackage = intent.getStringExtra(EXTRA_RETURN_PACKAGE) ?: return false
-        val packageToLaunch = if (AppTargets.isVirtualPackage(returnPackage)) {
-            AppTargets.getParentPackage(returnPackage)
-        } else {
-            returnPackage
-        }
-        val launchIntent = packageToLaunch?.let { packageManager.getLaunchIntentForPackage(it) } ?: return false
+        val launchIntent = packageManager.getLaunchIntentForPackage(returnPackage) ?: return false
         launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         startActivity(launchIntent)
         return true

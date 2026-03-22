@@ -85,15 +85,6 @@ class AppBlockerServiceTest {
         return field.get(instance)
     }
 
-    private fun invokeHandleUnblockedAppSwitch(service: AppBlockerService, packageName: String) {
-        val method = AppBlockerService::class.java.getDeclaredMethod(
-            "handleUnblockedAppSwitch",
-            String::class.java
-        )
-        method.isAccessible = true
-        method.invoke(service, packageName)
-    }
-
     private fun buildNode(
         viewId: String? = null,
         text: String? = null,
@@ -855,36 +846,6 @@ class AppBlockerServiceTest {
         // Should still be tracking
         val trackedPackage = getPrivateField(service, "currentTrackedPackage") as String?
         assertEquals("com.instagram.android", trackedPackage)
-    }
-
-    @Test
-    fun sameFamilyVirtualToParentDoesNotScheduleStopOrClearInterventionAuthorization() {
-        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
-        setPrivateField(service, "currentTrackedPackage", "org.mozilla.fenix:private")
-        setPrivateField(service, "interventionAuthorizedPackage", "org.mozilla.fenix:private")
-
-        invokeHandleUnblockedAppSwitch(service, "org.mozilla.fenix")
-
-        val pendingStopRunnable = getPrivateField(service, "pendingStopRunnable")
-        val interventionAuthorizedPackage =
-            getPrivateField(service, "interventionAuthorizedPackage") as String?
-        assertNull(pendingStopRunnable)
-        assertEquals("org.mozilla.fenix:private", interventionAuthorizedPackage)
-    }
-
-    @Test
-    fun sameFamilyParentToVirtualDoesNotScheduleStop() {
-        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
-        setPrivateField(service, "currentTrackedPackage", "org.mozilla.fenix")
-        setPrivateField(service, "interventionAuthorizedPackage", "org.mozilla.fenix")
-
-        invokeHandleUnblockedAppSwitch(service, "org.mozilla.fenix:private")
-
-        val pendingStopRunnable = getPrivateField(service, "pendingStopRunnable")
-        val interventionAuthorizedPackage =
-            getPrivateField(service, "interventionAuthorizedPackage") as String?
-        assertNull(pendingStopRunnable)
-        assertEquals("org.mozilla.fenix", interventionAuthorizedPackage)
     }
 
     @Test

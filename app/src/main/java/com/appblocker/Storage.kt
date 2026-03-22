@@ -16,12 +16,6 @@ internal data class SimpleUsageEvent(
     val timeStamp: Long
 )
 
-internal data class VirtualUsageSession(
-    val startMs: Long,
-    var endMs: Long? = null,
-    var lastSeenMs: Long? = null
-)
-
 internal fun computeUsageSeconds(
     blockSet: BlockSet,
     events: List<SimpleUsageEvent>,
@@ -93,7 +87,6 @@ class Storage(context: Context) {
         private const val KEY_BLOCK_SETS = "block_sets"
         private const val KEY_OVERLAY_X_PREFIX = "overlay_x_"
         private const val KEY_OVERLAY_Y_PREFIX = "overlay_y_"
-        private const val KEY_VIRTUAL_SESSIONS_PREFIX = "virtual_sessions_"
         private const val KEY_OVERRIDE_END_PREFIX = "override_end_"
         private const val KEY_LOCKDOWN_END = "lockdown_end"
         private const val KEY_LOCKDOWN_AUTH_MODE = "lockdown_auth_mode"
@@ -104,7 +97,6 @@ class Storage(context: Context) {
         private const val KEY_SETTINGS_PASSWORD = "settings_password"
         private const val KEY_INTERVENTION_BYPASS_PREFIX = "intervention_bypass_"
         private const val OVERLAY_POS_UNSET = Int.MIN_VALUE
-        private const val VIRTUAL_SESSION_MAX_AGE_MS = 7L * 24 * 60 * 60 * 1000
 
         const val OVERRIDE_AUTH_NONE = 0
         const val OVERRIDE_AUTH_PASSWORD = 1
@@ -149,8 +141,7 @@ class Storage(context: Context) {
     )
 
     fun saveBlockSets(blockSets: List<BlockSet>) {
-        val sanitizedBlockSets = sanitizeBlockSets(blockSets)
-        val json = gson.toJson(sanitizedBlockSets)
+        val json = gson.toJson(blockSets)
         putString(KEY_BLOCK_SETS, json)
     }
 
@@ -167,26 +158,9 @@ class Storage(context: Context) {
                     if (bs.interventionCodeLength <= 0) { bs.interventionCodeLength = 32; needsSave = true }
                 }
             }
-            val removedApps = bs.apps.removeAll { it in AppTargets.removedTrackingPackages }
-            if (removedApps) {
-                needsSave = true
-            }
         }
         if (needsSave) saveBlockSets(blockSets)
         return blockSets
-    }
-
-    private fun sanitizeBlockSets(blockSets: List<BlockSet>): List<BlockSet> {
-        return blockSets.map { blockSet ->
-            val sanitizedApps = blockSet.apps
-                .filterNot { it in AppTargets.removedTrackingPackages }
-                .toMutableList()
-            if (sanitizedApps == blockSet.apps) {
-                blockSet
-            } else {
-                blockSet.copy(apps = sanitizedApps)
-            }
-        }
     }
 
     fun getBlockSetForApp(packageName: String): BlockSet? {
@@ -316,64 +290,6 @@ class Storage(context: Context) {
             .apply()
     }
 
-    fun startVirtualSession(packageName: String, nowMs: Long = System.currentTimeMillis()) {
-        if (!AppTargets.isVirtualPackage(packageName)) return
-        val sessions = loadVirtualSessions(packageName)
-        val openSession = sessions.lastOrNull { it.endMs == null }
-        if (openSession == null) {
-            sessions.add(
-                VirtualUsageSession(
-                    startMs = nowMs,
-                    endMs = null,
-                    lastSeenMs = nowMs
-                )
-            )
-        } else {
-            openSession.lastSeenMs = nowMs
-        }
-        pruneAndSaveVirtualSessions(packageName, sessions, nowMs)
-    }
-
-    fun updateVirtualSessionHeartbeat(packageName: String, nowMs: Long = System.currentTimeMillis()) {
-        if (!AppTargets.isVirtualPackage(packageName)) return
-        val sessions = loadVirtualSessions(packageName)
-        val openSession = sessions.lastOrNull { it.endMs == null }
-        if (openSession != null) {
-            openSession.lastSeenMs = nowMs
-            pruneAndSaveVirtualSessions(packageName, sessions, nowMs)
-        }
-    }
-
-    fun endVirtualSession(packageName: String, nowMs: Long = System.currentTimeMillis()) {
-        if (!AppTargets.isVirtualPackage(packageName)) return
-        val sessions = loadVirtualSessions(packageName)
-        val openSession = sessions.lastOrNull { it.endMs == null }
-        if (openSession != null) {
-            openSession.endMs = nowMs
-            openSession.lastSeenMs = nowMs
-            pruneAndSaveVirtualSessions(packageName, sessions, nowMs)
-        }
-    }
-
-    fun getVirtualUsageSecondsInWindow(
-        packageName: String,
-        windowStartMs: Long,
-        nowMs: Long = System.currentTimeMillis()
-    ): Int {
-        if (!AppTargets.isVirtualPackage(packageName)) return 0
-        val sessions = loadVirtualSessions(packageName)
-        var totalMs = 0L
-        for (session in sessions) {
-            val sessionEnd = session.endMs ?: session.lastSeenMs ?: nowMs
-            val start = maxOf(session.startMs, windowStartMs)
-            val end = minOf(sessionEnd, nowMs)
-            if (end > start) {
-                totalMs += end - start
-            }
-        }
-        return (totalMs / 1000).toInt()
-    }
-
     // Get usage time from system UsageStats events for apps in a block set
     fun getUsageSecondsInWindow(blockSet: BlockSet): Int {
         val now = System.currentTimeMillis()
@@ -395,11 +311,7 @@ class Storage(context: Context) {
                 )
             )
         }
-        val usedSeconds = computeUsageSeconds(blockSet, simplifiedEvents, now, windowStart)
-        val virtualSeconds = blockSet.apps
-            .filter { AppTargets.isVirtualPackage(it) }
-            .sumOf { getVirtualUsageSecondsInWindow(it, windowStart, now) }
-        return usedSeconds + virtualSeconds
+        return computeUsageSeconds(blockSet, simplifiedEvents, now, windowStart)
     }
 
     fun getRemainingSeconds(blockSet: BlockSet): Int {
@@ -627,27 +539,6 @@ class Storage(context: Context) {
         }
 
         return usageMs.mapValues { (_, ms) -> (ms / 1000).toInt() }
-    }
-
-    private fun loadVirtualSessions(packageName: String): MutableList<VirtualUsageSession> {
-        val json = prefs.getString(KEY_VIRTUAL_SESSIONS_PREFIX + packageName, null)
-            ?: return mutableListOf()
-        val type = object : TypeToken<MutableList<VirtualUsageSession>>() {}.type
-        return gson.fromJson(json, type) ?: mutableListOf()
-    }
-
-    private fun pruneAndSaveVirtualSessions(
-        packageName: String,
-        sessions: MutableList<VirtualUsageSession>,
-        nowMs: Long
-    ) {
-        val cutoff = nowMs - VIRTUAL_SESSION_MAX_AGE_MS
-        sessions.removeIf { session ->
-            val lastPoint = session.endMs ?: session.lastSeenMs ?: session.startMs
-            lastPoint < cutoff
-        }
-        val json = gson.toJson(sessions)
-        putString(KEY_VIRTUAL_SESSIONS_PREFIX + packageName, json)
     }
 
     private fun getAuthMode(config: AuthPrefsConfig): Int {

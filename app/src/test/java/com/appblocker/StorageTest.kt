@@ -52,25 +52,6 @@ class StorageTest {
     }
 
     @Test
-    fun stripsRemovedInAppTrackingTargetsWhenSavingAndLoadingBlockSets() {
-        val storage = Storage(context)
-        val blockSet = BlockSet(
-            name = "Social",
-            apps = mutableListOf(
-                "com.instagram.android",
-                "com.instagram.android:reels",
-                "com.google.android.youtube:shorts",
-                "com.android.chrome:incognito"
-            )
-        )
-
-        storage.saveBlockSets(listOf(blockSet))
-        val loaded = storage.getBlockSets()
-
-        assertEquals(listOf("com.instagram.android"), loaded.single().apps)
-    }
-
-    @Test
     fun findsBlockSetForApp() {
         val storage = Storage(context)
         val blockSets = listOf(

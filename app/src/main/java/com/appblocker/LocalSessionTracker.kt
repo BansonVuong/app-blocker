@@ -17,10 +17,7 @@ class LocalSessionTracker(
         }
     }
 
-    fun start(packageName: String, blockSet: BlockSet, nowMs: Long): State {
-        if (AppTargets.isVirtualPackage(packageName)) {
-            storage.startVirtualSession(packageName, nowMs)
-        }
+    fun start(blockSet: BlockSet, nowMs: Long): State {
         return State(
             sessionStartTimeMs = nowMs,
             initialRemainingSeconds = storage.getRemainingSeconds(blockSet),
@@ -29,15 +26,10 @@ class LocalSessionTracker(
     }
 
     fun updateForWindowBoundary(
-        packageName: String,
         blockSet: BlockSet,
         nowMs: Long,
         state: State
     ): State {
-        if (AppTargets.isVirtualPackage(packageName)) {
-            storage.updateVirtualSessionHeartbeat(packageName, nowMs)
-        }
-
         if (state.currentWindowEndMs > 0 && nowMs >= state.currentWindowEndMs) {
             return State(
                 sessionStartTimeMs = nowMs,
@@ -55,9 +47,6 @@ class LocalSessionTracker(
     }
 
     fun stop(trackedPackage: String?) {
-        val packageName = trackedPackage ?: return
-        if (AppTargets.isVirtualPackage(packageName)) {
-            storage.endVirtualSession(packageName)
-        }
+        trackedPackage ?: return
     }
 }
