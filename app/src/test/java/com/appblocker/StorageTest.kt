@@ -160,6 +160,17 @@ class StorageTest {
     }
 
     @Test
+    fun allowOverrideDuringLockdownSettingPersists() {
+        val storage = Storage(context)
+
+        assertFalse(storage.getAllowOverrideDuringLockdown())
+        storage.setAllowOverrideDuringLockdown(true)
+        assertTrue(storage.getAllowOverrideDuringLockdown())
+        storage.setAllowOverrideDuringLockdown(false)
+        assertFalse(storage.getAllowOverrideDuringLockdown())
+    }
+
+    @Test
     fun interventionBypassIsSingleUse() {
         val storage = Storage(context)
 

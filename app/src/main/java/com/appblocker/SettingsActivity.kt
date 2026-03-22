@@ -50,6 +50,10 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         setupAllAuthSections()
+        binding.checkAllowOverrideDuringLockdown.isChecked = storage.getAllowOverrideDuringLockdown()
+        binding.checkAllowOverrideDuringLockdown.setOnCheckedChangeListener { _, isChecked ->
+            storage.setAllowOverrideDuringLockdown(isChecked)
+        }
     }
 
     private fun ensureSettingsAccess(): Boolean {

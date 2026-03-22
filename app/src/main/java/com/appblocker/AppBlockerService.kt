@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import com.google.gson.Gson
@@ -46,7 +47,6 @@ class AppBlockerService : AccessibilityService() {
             private set
         private const val OVERLAY_UPDATE_INTERVAL_MS = 1000L
         private const val PENDING_STOP_DELAY_MS = 1000L
-        private const val RECENT_BLOCKED_EVENT_THRESHOLD_MS = 1500L
         private const val OVERLAY_MARGIN_DP = 12
         private const val LOG_TAG = "AppBlockerOverlay"
         private const val BLOCKED_SCREEN_DEDUP_WINDOW_MS = 1_500L
@@ -112,6 +112,13 @@ class AppBlockerService : AccessibilityService() {
             nowMs = nowMs
         )
         val resolvedFromWrapperPackage = effectivePackageName != packageName
+        logEvent(
+            stage = "event",
+            eventType = event.eventType,
+            rawPackage = packageName,
+            effectivePackage = effectivePackageName,
+            className = className
+        )
 
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
             !isLikelyOverlayPackage(packageName)
@@ -128,35 +135,76 @@ class AppBlockerService : AccessibilityService() {
             lastForegroundPackage = packageName
         }
 
-        val policy = storage.resolveEffectiveAppPolicy(effectivePackageName, nowMs)
-
         if (packageName == "com.android.systemui" && !resolvedFromWrapperPackage) {
+            logDecision("ignore_systemui", packageName)
             return
         }
 
-        if ((packageName == "com.android.launcher" || packageName.contains("launcher")) &&
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            (packageName == "com.android.launcher" || packageName.contains("launcher")) &&
             !resolvedFromWrapperPackage
         ) {
+            logDecision("stop_launcher", packageName)
             interventionAuthorizedPackage = null
             interventionAuthorizedSignature = null
             stopTracking()
             return
         }
 
-        if (policy != null) {
-            handleBlockedApp(effectivePackageName, policy, nowMs)
-            return
-        }
-
         if (packageName == this.packageName) {
-            handleAppBlockerPackageEvent(className, nowMs)
+            val isAppBlockerActivity = className?.startsWith(this.packageName) == true
+            if (!isAppBlockerActivity && currentTrackedPackage != null) {
+                logDecision("ignore_self_overlay_event", packageName)
+                return
+            }
+            if (isSameAppFamily(currentTrackedPackage, currentRootPackage())) {
+                logDecision("ignore_self_overlay_event", packageName)
+                return
+            }
+            logDecision("stop_self", packageName)
+            stopTracking()
             return
         }
 
+        val policy = storage.resolveEffectiveAppPolicy(effectivePackageName, nowMs)
+
+        if (policy != null) {
+            handleBlockedApp(
+                packageName = effectivePackageName,
+                policy = policy,
+                nowMs = nowMs,
+                eventType = event.eventType
+            )
+            return
+        }
+
+        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            logDecision("ignore_non_state_unblocked", effectivePackageName)
+            return
+        }
+
+        logDecision("handle_unblocked_switch", effectivePackageName)
         handleUnblockedAppSwitch(effectivePackageName)
     }
 
-    private fun handleBlockedApp(packageName: String, policy: EffectiveAppPolicy, nowMs: Long) {
+    private fun handleBlockedApp(
+        packageName: String,
+        policy: EffectiveAppPolicy,
+        nowMs: Long,
+        eventType: Int
+    ) {
+        val trackedPackage = currentTrackedPackage
+        val isStateChange = eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+        val isCurrentFamily = isSameAppFamily(trackedPackage, packageName)
+        if (!isStateChange && trackedPackage == null) {
+            logDecision("ignore_non_state_blocked_without_tracking", packageName)
+            return
+        }
+        if (!isStateChange && trackedPackage != null && !isCurrentFamily) {
+            logDecision("ignore_non_state_blocked_other_package", packageName)
+            return
+        }
+
         val blockSet = policy.primaryBlockSet
         lastBlockedEventTimeMs = nowMs
         cancelPendingStop()
@@ -190,40 +238,27 @@ class AppBlockerService : AccessibilityService() {
         }
 
         if (currentTrackedPackage != packageName) {
+            logDecision("start_tracking", packageName)
             stopTracking()
             startTracking(packageName, blockSet, policy.effectiveDisplayRemainingSeconds)
         }
         updateOverlayWithLocalTracking(blockSet, policy.effectiveDisplayRemainingSeconds)
     }
 
-    private fun handleAppBlockerPackageEvent(className: String?, nowMs: Long) {
-        val recentlyInBlockedApp = currentTrackedPackage != null &&
-            (nowMs - lastBlockedEventTimeMs) < RECENT_BLOCKED_EVENT_THRESHOLD_MS
-        val isAppBlockerActivity = className?.startsWith(this.packageName) == true
-
-        if (currentTrackedPackage != null && !isAppBlockerActivity) {
-            return
-        }
-        if (recentlyInBlockedApp && !isAppBlockerActivity) {
-            return
-        }
-        if (currentTrackedPackage != null) {
-            scheduleStopTracking()
-        } else {
-            stopTracking()
-        }
-    }
-
     private fun handleUnblockedAppSwitch(packageName: String) {
         val trackedPackage = currentTrackedPackage
         if (isSameAppFamily(trackedPackage, packageName)) {
+            logDecision("keep_same_family", packageName)
             cancelPendingStop()
             return
         }
 
         val isLikelyOverlay = isLikelyOverlayPackage(packageName)
         if (!isLikelyOverlay) {
+            logDecision("schedule_stop", packageName)
             scheduleStopTracking()
+        } else {
+            logDecision("keep_overlay", packageName)
         }
     }
 
@@ -310,6 +345,7 @@ class AppBlockerService : AccessibilityService() {
     }
 
     private fun stopTracking() {
+        logDecision("stop_tracking", currentTrackedPackage)
         cancelPendingStop()
         overlayUpdateRunnable?.let { handler.removeCallbacks(it) }
         overlayUpdateRunnable = null
@@ -330,14 +366,69 @@ class AppBlockerService : AccessibilityService() {
         if (pendingStopRunnable != null) return
 
         pendingStopRunnable = Runnable {
+            if (shouldKeepTrackingCurrentApp()) {
+                logDecision("cancel_stop_keep_root", currentTrackedPackage)
+                cancelPendingStop()
+                return@Runnable
+            }
+            logDecision("execute_stop", currentTrackedPackage)
             stopTracking()
         }
+        logDecision("post_delayed_stop", currentTrackedPackage)
         handler.postDelayed(pendingStopRunnable!!, PENDING_STOP_DELAY_MS)
     }
 
+    private fun shouldKeepTrackingCurrentApp(): Boolean {
+        val trackedPackage = currentTrackedPackage ?: return false
+        val rootPackage = rootInActiveWindow?.packageName?.toString()?.trim().orEmpty()
+        if (rootPackage.isEmpty()) return false
+        if (isSameAppFamily(trackedPackage, rootPackage)) return true
+        if (isLikelyOverlayPackage(rootPackage)) return true
+        return false
+    }
+
     private fun cancelPendingStop() {
+        if (pendingStopRunnable != null) {
+            logDecision("cancel_pending_stop", currentTrackedPackage)
+        }
         pendingStopRunnable?.let { handler.removeCallbacks(it) }
         pendingStopRunnable = null
+    }
+
+    private fun logEvent(
+        stage: String,
+        eventType: Int,
+        rawPackage: String,
+        effectivePackage: String,
+        className: String?
+    ) {
+        Log.d(
+            LOG_TAG,
+            "stage=$stage type=${eventTypeName(eventType)} raw=$rawPackage effective=$effectivePackage " +
+                "root=${currentRootPackage()} tracked=${currentTrackedPackage ?: "-"} class=${className ?: "-"}"
+        )
+    }
+
+    private fun logDecision(decision: String, packageName: String?) {
+        Log.d(
+            LOG_TAG,
+            "decision=$decision pkg=${packageName ?: "-"} root=${currentRootPackage()} " +
+                "tracked=${currentTrackedPackage ?: "-"} pendingStop=${pendingStopRunnable != null}"
+        )
+    }
+
+    private fun currentRootPackage(): String {
+        return rootInActiveWindow?.packageName?.toString()?.trim().orEmpty().ifEmpty { "-" }
+    }
+
+    private fun eventTypeName(eventType: Int): String {
+        return when (eventType) {
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> "WINDOW_STATE_CHANGED"
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> "WINDOW_CONTENT_CHANGED"
+            AccessibilityEvent.TYPE_VIEW_CLICKED -> "VIEW_CLICKED"
+            AccessibilityEvent.TYPE_VIEW_SCROLLED -> "VIEW_SCROLLED"
+            else -> eventType.toString()
+        }
     }
 
     private fun launchBlockedScreen(

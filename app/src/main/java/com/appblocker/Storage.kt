@@ -91,6 +91,7 @@ class Storage(context: Context) {
         private const val KEY_LOCKDOWN_END = "lockdown_end"
         private const val KEY_LOCKDOWN_AUTH_MODE = "lockdown_auth_mode"
         private const val KEY_LOCKDOWN_PASSWORD = "lockdown_password"
+        private const val KEY_ALLOW_OVERRIDE_DURING_LOCKDOWN = "allow_override_during_lockdown"
         private const val KEY_OVERRIDE_AUTH_MODE = "override_auth_mode"
         private const val KEY_OVERRIDE_PASSWORD = "override_password"
         private const val KEY_SETTINGS_AUTH_MODE = "settings_auth_mode"
@@ -380,6 +381,14 @@ class Storage(context: Context) {
 
     fun getLockdownRandomCodeLength(): Int = getAuthRandomCodeLength(lockdownAuthConfig)
     fun setLockdownRandomCodeLength(length: Int) { setAuthRandomCodeLength(lockdownAuthConfig, length) }
+
+    fun getAllowOverrideDuringLockdown(): Boolean {
+        return prefs.getBoolean(KEY_ALLOW_OVERRIDE_DURING_LOCKDOWN, false)
+    }
+
+    fun setAllowOverrideDuringLockdown(enabled: Boolean) {
+        putBoolean(KEY_ALLOW_OVERRIDE_DURING_LOCKDOWN, enabled)
+    }
 
     fun clearLockdown() {
         removeKey(KEY_LOCKDOWN_END)

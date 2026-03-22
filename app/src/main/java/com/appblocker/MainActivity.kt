@@ -175,6 +175,8 @@ class MainActivity : AppCompatActivity() {
     private fun updateActionButtons(blockSets: List<BlockSet>) {
         val overrideEligible = blockSets.filter { it.allowOverride }
         val hasActiveOverride = overrideEligible.any { storage.isOverrideActive(it) }
+        val lockdownActive = storage.isLockdownActive()
+        val overrideAllowedDuringLockdown = storage.getAllowOverrideDuringLockdown()
         if (hasActiveOverride != lastHasActiveOverride) {
             binding.buttonOverride.text = if (hasActiveOverride) {
                 getString(R.string.cancel_override)
@@ -183,8 +185,9 @@ class MainActivity : AppCompatActivity() {
             }
             lastHasActiveOverride = hasActiveOverride
         }
+        binding.buttonOverride.isEnabled = !lockdownActive || overrideAllowedDuringLockdown
+        binding.buttonOverride.alpha = if (binding.buttonOverride.isEnabled) 1f else 0.5f
 
-        val lockdownActive = storage.isLockdownActive()
         if (lockdownActive != lastLockdownActive) {
             binding.buttonLockdown.text = if (lockdownActive) {
                 getString(R.string.cancel_lockdown)

@@ -60,6 +60,7 @@
     <string name="lockdown_password_incorrect">Incorrect lockdown password</string>
     <string name="lockdown_random_password_message">@string/enter_random_password_to_continue</string>
     <string name="lockdown_cannot_cancel">Lockdown cannot be cancelled</string>
+    <string name="allow_override_during_lockdown">Allow override during lockdown</string>
     <string name="override_minutes">Override minutes</string>
     <string name="override_minutes_hint">Minutes</string>
     <string name="override_for_block_set">Override "%s"</string>

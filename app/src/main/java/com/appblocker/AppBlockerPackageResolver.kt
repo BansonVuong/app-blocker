@@ -1,5 +1,6 @@
 package com.appblocker
 
+import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 
 class AppBlockerPackageResolver(
@@ -22,6 +23,9 @@ class AppBlockerPackageResolver(
         "com.oplus.sidebar",
         "com.vivo.upslide"
     )
+    private val ambiguousRootPackages = setOf(
+        "com.google.android.googlequicksearchbox"
+    )
 
     fun resolveEffectivePackageName(
         packageName: String,
@@ -32,7 +36,7 @@ class AppBlockerPackageResolver(
         val inAppBrowserPackage = resolveInAppBrowserPackage(packageName, className)
         if (inAppBrowserPackage != null) return inAppBrowserPackage
 
-        resolveRootPackage(packageName)?.let { return it }
+        resolveRootPackage(packageName, eventType)?.let { return it }
 
         return packageName
     }
@@ -48,12 +52,14 @@ class AppBlockerPackageResolver(
         return packageName in AppTargets.browserPackages
     }
 
-    private fun resolveRootPackage(eventPackageName: String): String? {
+    private fun resolveRootPackage(eventPackageName: String, eventType: Int): String? {
+        if (eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return null
         if (!shouldUseRootPackageFallback(eventPackageName)) return null
         val rootPackageName = rootProvider()?.packageName?.toString()?.trim().orEmpty()
         if (rootPackageName.isEmpty()) return null
         if (rootPackageName == eventPackageName) return null
         if (rootPackageName == "com.appblocker") return null
+        if (rootPackageName in ambiguousRootPackages) return null
         if (shouldUseRootPackageFallback(rootPackageName)) return null
         return rootPackageName
     }

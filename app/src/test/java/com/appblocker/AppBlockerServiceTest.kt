@@ -144,6 +144,24 @@ class AppBlockerServiceTest {
         )
     }
 
+    private fun installPackageResolverWithDynamicRoot(
+        service: AppBlockerService,
+        rootProvider: () -> String
+    ) {
+        setPrivateField(
+            service,
+            "packageResolver",
+            AppBlockerPackageResolver(
+                storage = storage,
+                rootProvider = {
+                    AccessibilityNodeInfo.obtain().apply {
+                        packageName = rootProvider()
+                    }
+                }
+            )
+        )
+    }
+
     private fun drainStartedActivitiesCount(): Int {
         val shadowApp = Shadows.shadowOf(app)
         var count = 0
@@ -280,14 +298,168 @@ class AppBlockerServiceTest {
         val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
 
         service.onAccessibilityEvent(createWindowStateChangedEvent("org.mozilla.fenix"))
-        service.onAccessibilityEvent(createWindowStateChangedEvent("com.appblocker"))
+        service.onAccessibilityEvent(
+            createEvent(
+                packageName = "com.appblocker",
+                className = "com.appblocker.MainActivity"
+            )
+        )
         drainStartedActivitiesCount()
         setPrivateField(service, "lastBlockedScreenLaunchMs", 0L)
 
         service.onAccessibilityEvent(createWindowContentChangedEvent("org.mozilla.fenix"))
 
         assertEquals(0, drainStartedActivitiesCount())
-        assertEquals("org.mozilla.fenix", getPrivateField(service, "currentTrackedPackage"))
+        assertNull(getPrivateField(service, "currentTrackedPackage"))
+    }
+
+    @Test
+    fun doesNotStartTrackingBlockedAppFromContentChangedEventAlone() {
+        val blockSet = BlockSet(
+            name = "Social",
+            apps = mutableListOf("org.mozilla.fenix"),
+            quotaMinutes = 30.0,
+            windowMinutes = 60
+        )
+        storage.saveBlockSets(listOf(blockSet))
+
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        service.onAccessibilityEvent(createWindowContentChangedEvent("org.mozilla.fenix"))
+
+        assertNull(getPrivateField(service, "currentTrackedPackage"))
+        assertNull(Shadows.shadowOf(app).nextStartedActivity)
+    }
+
+    @Test
+    fun doesNotSwitchBlockedAppsFromContentChangedEvent() {
+        val blockSets = listOf(
+            BlockSet(
+                name = "Social",
+                apps = mutableListOf("com.instagram.android"),
+                quotaMinutes = 30.0,
+                windowMinutes = 60
+            ),
+            BlockSet(
+                name = "Video",
+                apps = mutableListOf("com.zhiliaoapp.musically"),
+                quotaMinutes = 30.0,
+                windowMinutes = 60
+            )
+        )
+        storage.saveBlockSets(blockSets)
+
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        service.onAccessibilityEvent(createWindowStateChangedEvent("com.instagram.android"))
+        service.onAccessibilityEvent(createWindowContentChangedEvent("com.zhiliaoapp.musically"))
+
+        assertEquals("com.instagram.android", getPrivateField(service, "currentTrackedPackage"))
+    }
+
+    @Test
+    fun nonWindowStateChangedEventDoesNotStopActiveBlockedTracking() {
+        val blockSet = BlockSet(
+            name = "Social",
+            apps = mutableListOf("com.instagram.android"),
+            quotaMinutes = 30.0,
+            windowMinutes = 60
+        )
+        storage.saveBlockSets(listOf(blockSet))
+
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        service.onAccessibilityEvent(createWindowStateChangedEvent("com.instagram.android"))
+        service.onAccessibilityEvent(createWindowContentChangedEvent("com.example.unblocked"))
+
+        assertEquals("com.instagram.android", getPrivateField(service, "currentTrackedPackage"))
+        assertNull(getPrivateField(service, "pendingStopRunnable"))
+    }
+
+    @Test
+    fun launcherContentChangedEventDoesNotStopTracking() {
+        val blockSet = BlockSet(
+            name = "Social",
+            apps = mutableListOf("com.instagram.android"),
+            quotaMinutes = 30.0,
+            windowMinutes = 60
+        )
+        storage.saveBlockSets(listOf(blockSet))
+
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        service.onAccessibilityEvent(createWindowStateChangedEvent("com.instagram.android"))
+        service.onAccessibilityEvent(createWindowContentChangedEvent("com.google.android.apps.nexuslauncher"))
+
+        assertEquals("com.instagram.android", getPrivateField(service, "currentTrackedPackage"))
+    }
+
+    @Test
+    fun appBlockerOverlayEventDoesNotStopTrackingWhenRootIsTrackedApp() {
+        val blockSet = BlockSet(
+            name = "Social",
+            apps = mutableListOf("com.instagram.android"),
+            quotaMinutes = 30.0,
+            windowMinutes = 60
+        )
+        storage.saveBlockSets(listOf(blockSet))
+
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        installPackageResolverWithDynamicRoot(service) { "com.instagram.android" }
+
+        service.onAccessibilityEvent(createWindowStateChangedEvent("com.instagram.android"))
+        service.onAccessibilityEvent(
+            createEvent(
+                packageName = "com.appblocker",
+                className = "android.widget.TextView"
+            )
+        )
+
+        assertEquals("com.instagram.android", getPrivateField(service, "currentTrackedPackage"))
+    }
+
+    @Test
+    fun stopsTrackingImmediatelyWhenAppBlockerAppIsForeground() {
+        val blockSet = BlockSet(
+            name = "Social",
+            apps = mutableListOf("com.instagram.android"),
+            quotaMinutes = 30.0,
+            windowMinutes = 60
+        )
+        storage.saveBlockSets(listOf(blockSet))
+
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        service.onAccessibilityEvent(createWindowStateChangedEvent("com.instagram.android"))
+
+        assertEquals("com.instagram.android", getPrivateField(service, "currentTrackedPackage"))
+
+        service.onAccessibilityEvent(
+            createEvent(
+                packageName = "com.appblocker",
+                className = "com.appblocker.MainActivity"
+            )
+        )
+
+        assertNull(getPrivateField(service, "currentTrackedPackage"))
+        assertNull(getPrivateField(service, "pendingStopRunnable"))
+    }
+
+    @Test
+    fun samsungWrapperResolvedToGoogleAppDoesNotLaunchBlockScreen() {
+        val blockSet = BlockSet(
+            name = "Focus",
+            apps = mutableListOf("com.google.android.googlequicksearchbox"),
+            quotaMinutes = 30.0,
+            windowMinutes = 60,
+            intervention = BlockSet.INTERVENTION_RANDOM
+        )
+        storage.saveBlockSets(listOf(blockSet))
+
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        installPackageResolverWithRoot(service, "com.google.android.googlequicksearchbox")
+
+        service.onAccessibilityEvent(
+            createEvent(packageName = "com.samsung.android.app.cocktailbarservice")
+        )
+
+        assertNull(Shadows.shadowOf(app).nextStartedActivity)
+        assertNull(getPrivateField(service, "currentTrackedPackage"))
     }
 
     @Test

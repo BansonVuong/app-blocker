@@ -1,6 +1,7 @@
 package com.appblocker
 
 import android.app.Application
+import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
@@ -38,7 +39,7 @@ class AppBlockerPackageResolverTest {
         val resolved = resolver.resolveEffectivePackageName(
             packageName = "com.miui.home",
             className = "android.widget.FrameLayout",
-            eventType = 0,
+            eventType = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
             nowMs = 0L
         )
 
@@ -59,7 +60,7 @@ class AppBlockerPackageResolverTest {
         val resolved = resolver.resolveEffectivePackageName(
             packageName = "com.miui.securitycenter",
             className = "android.widget.FrameLayout",
-            eventType = 0,
+            eventType = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
             nowMs = 0L
         )
 
@@ -80,7 +81,7 @@ class AppBlockerPackageResolverTest {
         val resolved = resolver.resolveEffectivePackageName(
             packageName = "com.teslacoilsw.launcher",
             className = "android.widget.FrameLayout",
-            eventType = 0,
+            eventType = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
             nowMs = 0L
         )
 
@@ -100,5 +101,47 @@ class AppBlockerPackageResolverTest {
         )
 
         assertNull(resolved)
+    }
+
+    @Test
+    fun doesNotUseRootFallbackForNonWindowStateChangedWrapperEvents() {
+        val resolver = AppBlockerPackageResolver(
+            storage = storage,
+            rootProvider = {
+                AccessibilityNodeInfo.obtain().apply {
+                    packageName = "com.instagram.android"
+                }
+            }
+        )
+
+        val resolved = resolver.resolveEffectivePackageName(
+            packageName = "com.samsung.android.app.cocktailbarservice",
+            className = "android.widget.FrameLayout",
+            eventType = AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
+            nowMs = 0L
+        )
+
+        assertEquals("com.samsung.android.app.cocktailbarservice", resolved)
+    }
+
+    @Test
+    fun doesNotResolveSamsungWrapperToGoogleQuickSearchBox() {
+        val resolver = AppBlockerPackageResolver(
+            storage = storage,
+            rootProvider = {
+                AccessibilityNodeInfo.obtain().apply {
+                    packageName = "com.google.android.googlequicksearchbox"
+                }
+            }
+        )
+
+        val resolved = resolver.resolveEffectivePackageName(
+            packageName = "com.samsung.android.app.cocktailbarservice",
+            className = "android.widget.FrameLayout",
+            eventType = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
+            nowMs = 0L
+        )
+
+        assertEquals("com.samsung.android.app.cocktailbarservice", resolved)
     }
 }
