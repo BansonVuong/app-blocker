@@ -2,6 +2,8 @@
 
 This is an Android app to manage and enforce screen time. Normal Android Digital Wellbeing sucks and is too easily bypassed.
 
+**Play Protect may block this app. This is because the app requires AccessiblityService to know which app you are currently in to take over your screen and block apps that have reached their quota.**
+
 # Features
 
 - Create a block set
