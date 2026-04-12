@@ -3,6 +3,22 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+fun signingValue(name: String): String? = (findProperty(name) as String?) ?: System.getenv(name)
+
+val releaseVersionName = providers.gradleProperty("APP_VERSION_NAME")
+    .orElse(providers.environmentVariable("APP_VERSION_NAME"))
+    .orElse("1.0")
+val releaseVersionCode = providers.gradleProperty("APP_VERSION_CODE")
+    .map(String::toInt)
+    .orElse(
+        providers.environmentVariable("APP_VERSION_CODE").map(String::toInt)
+    )
+    .orElse(1)
+val releaseStoreFile = signingValue("ANDROID_SIGNING_STORE_FILE")
+val releaseStorePassword = signingValue("ANDROID_SIGNING_STORE_PASSWORD")
+val releaseKeyAlias = signingValue("ANDROID_SIGNING_KEY_ALIAS")
+val releaseKeyPassword = signingValue("ANDROID_SIGNING_KEY_PASSWORD")
+
 android {
     namespace = "com.appblocker"
     compileSdk = 34
@@ -11,12 +27,29 @@ android {
         applicationId = "com.appblocker"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = releaseVersionCode.get()
+        versionName = releaseVersionName.get()
+    }
+
+    signingConfigs {
+        if (
+            releaseStoreFile != null &&
+            releaseStorePassword != null &&
+            releaseKeyAlias != null &&
+            releaseKeyPassword != null
+        ) {
+            create("release") {
+                storeFile = file(releaseStoreFile)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
     }
 
     buildTypes {
         release {
+            signingConfigs.findByName("release")?.let { signingConfig = it }
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
