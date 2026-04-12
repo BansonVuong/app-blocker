@@ -310,20 +310,23 @@ class BlockedActivity : AppCompatActivity() {
 
     private fun resolveQuotaBlockingBlockSet(fallbackBlockSetId: String?): BlockSet? {
         val returnPackage = intent.getStringExtra(EXTRA_RETURN_PACKAGE)
+        val fallbackBlockSet = fallbackBlockSetId?.let { id ->
+            storage.getBlockSets().find { it.id == id }
+        }
         if (!returnPackage.isNullOrBlank()) {
             val policy = storage.resolveEffectiveAppPolicy(returnPackage)
             if (policy?.quotaBlocked == true) {
                 return policy.quotaBlockingBlockSet ?: policy.primaryBlockSet
             }
-            return null
+            if (fallbackBlockSet != null) {
+                return fallbackBlockSet
+            }
         }
 
-        val fallbackBlockSet = fallbackBlockSetId?.let { id ->
-            storage.getBlockSets().find { it.id == id }
-        } ?: return null
+        val resolvedFallbackBlockSet = fallbackBlockSet ?: return null
 
-        if (storage.isOverrideActive(fallbackBlockSet)) return null
-        if (!storage.isQuotaExceeded(fallbackBlockSet)) return null
-        return fallbackBlockSet
+        if (storage.isOverrideActive(resolvedFallbackBlockSet)) return null
+        if (!storage.isQuotaExceeded(resolvedFallbackBlockSet)) return null
+        return resolvedFallbackBlockSet
     }
 }

@@ -35,6 +35,7 @@ class AppBlockerService : AccessibilityService() {
     private var lastBlockedScreenKey: String? = null
     private var lastBlockedScreenLaunchMs: Long = 0
     private var lastForegroundPackage: String? = null
+    private var enforcedBlockedPackage: String? = null
     private val gson = Gson()
 
     // Local session tracking to enable immediate blocking when timer runs out.
@@ -145,6 +146,7 @@ class AppBlockerService : AccessibilityService() {
             !resolvedFromWrapperPackage
         ) {
             logDecision("stop_launcher", packageName)
+            enforcedBlockedPackage = null
             interventionAuthorizedPackage = null
             interventionAuthorizedSignature = null
             stopTracking()
@@ -162,6 +164,7 @@ class AppBlockerService : AccessibilityService() {
                 return
             }
             logDecision("stop_self", packageName)
+            enforcedBlockedPackage = null
             stopTracking()
             return
         }
@@ -183,6 +186,11 @@ class AppBlockerService : AccessibilityService() {
             return
         }
 
+        if (!isLikelyOverlayPackage(effectivePackageName) &&
+            !isSameAppFamily(enforcedBlockedPackage, effectivePackageName)
+        ) {
+            enforcedBlockedPackage = null
+        }
         logDecision("handle_unblocked_switch", effectivePackageName)
         handleUnblockedAppSwitch(effectivePackageName)
     }
@@ -196,13 +204,20 @@ class AppBlockerService : AccessibilityService() {
         val trackedPackage = currentTrackedPackage
         val isStateChange = eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
         val isCurrentFamily = isSameAppFamily(trackedPackage, packageName)
+        val isEnforcedFamily = isSameAppFamily(enforcedBlockedPackage, packageName)
         if (!isStateChange && trackedPackage == null) {
-            logDecision("ignore_non_state_blocked_without_tracking", packageName)
-            return
+            if (!isEnforcedFamily) {
+                logDecision("ignore_non_state_blocked_without_tracking", packageName)
+                return
+            }
+            logDecision("allow_non_state_blocked_enforced_package", packageName)
         }
         if (!isStateChange && trackedPackage != null && !isCurrentFamily) {
-            logDecision("ignore_non_state_blocked_other_package", packageName)
-            return
+            if (!isEnforcedFamily) {
+                logDecision("ignore_non_state_blocked_other_package", packageName)
+                return
+            }
+            logDecision("allow_non_state_blocked_enforced_package", packageName)
         }
 
         val blockSet = policy.primaryBlockSet
@@ -210,6 +225,7 @@ class AppBlockerService : AccessibilityService() {
         cancelPendingStop()
 
         if (storage.isLockdownActive(nowMs)) {
+            enforcedBlockedPackage = packageName
             launchBlockedScreen(blockSet.name, blockSet.id, packageName)
             stopTracking()
             return
@@ -217,12 +233,14 @@ class AppBlockerService : AccessibilityService() {
 
         if (policy.quotaBlocked) {
             val quotaBlockingBlockSet = policy.quotaBlockingBlockSet ?: blockSet
+            enforcedBlockedPackage = packageName
             launchBlockedScreen(quotaBlockingBlockSet.name, quotaBlockingBlockSet.id, packageName)
             stopTracking()
             return
         }
 
         if (!isInterventionAuthorized(packageName, policy, nowMs)) {
+            enforcedBlockedPackage = packageName
             launchBlockedScreen(
                 blockSetName = blockSet.name,
                 blockSetId = blockSet.id,
@@ -238,6 +256,7 @@ class AppBlockerService : AccessibilityService() {
         }
 
         if (currentTrackedPackage != packageName) {
+            enforcedBlockedPackage = null
             logDecision("start_tracking", packageName)
             stopTracking()
             startTracking(packageName, blockSet, policy.effectiveDisplayRemainingSeconds)

@@ -374,6 +374,26 @@ class AppBlockerServiceTest {
     }
 
     @Test
+    fun enforcedBlockedPackageRelaunchesBlockScreenFromNonStateEvent() {
+        val blockSet = BlockSet(
+            name = "Focus",
+            apps = mutableListOf("com.example.blocked"),
+            quotaMinutes = 0.0,
+            windowMinutes = 60
+        )
+        storage.saveBlockSets(listOf(blockSet))
+
+        val service = Robolectric.buildService(AppBlockerService::class.java).create().get()
+        service.onAccessibilityEvent(createWindowStateChangedEvent("com.example.blocked"))
+        drainStartedActivitiesCount()
+        setPrivateField(service, "lastBlockedScreenLaunchMs", 0L)
+
+        service.onAccessibilityEvent(createWindowContentChangedEvent("com.example.blocked"))
+
+        assertEquals(BlockedActivity::class.java.name, Shadows.shadowOf(app).nextStartedActivity?.component?.className)
+    }
+
+    @Test
     fun launcherContentChangedEventDoesNotStopTracking() {
         val blockSet = BlockSet(
             name = "Social",

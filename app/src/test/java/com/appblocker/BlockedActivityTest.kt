@@ -115,6 +115,33 @@ class BlockedActivityTest {
     }
 
     @Test
+    fun keepsQuotaScreenVisibleWhenLaunchedFromLocalExpiryFallbackBlockSet() {
+        val storage = Storage(app)
+        val blockSet = BlockSet(
+            name = "Focus",
+            apps = mutableListOf("com.example.blocked"),
+            quotaMinutes = 30.0,
+            windowMinutes = 60
+        )
+        storage.saveBlockSets(listOf(blockSet))
+
+        val activity = Robolectric.buildActivity(
+            BlockedActivity::class.java,
+            blockedIntent(mode = BlockedActivity.MODE_QUOTA).apply {
+                putExtra(BlockedActivity.EXTRA_BLOCK_SET_NAME, blockSet.name)
+                putExtra(BlockedActivity.EXTRA_BLOCK_SET_ID, blockSet.id)
+                putExtra(BlockedActivity.EXTRA_RETURN_PACKAGE, "com.example.blocked")
+            }
+        ).setup().get()
+
+        assertFalse(activity.isFinishing)
+        assertEquals(
+            "\"${blockSet.name}\"",
+            activity.findViewById<TextView>(R.id.textBlockSetName).text.toString()
+        )
+    }
+
+    @Test
     fun formatsFutureDayUnblockTimeWithDate() {
         val originalTimeZone = TimeZone.getDefault()
         val testTimeZone = TimeZone.getTimeZone("America/Toronto")
